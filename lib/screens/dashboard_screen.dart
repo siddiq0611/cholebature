@@ -6,8 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../main.dart';
 import '../providers/transaction_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/budget_bar.dart';
 import '../widgets/category_chart.dart';
-import '../widgets/filter_bar.dart';
 import '../widgets/summary_cards.dart';
 import 'add_transaction_sheet.dart';
 
@@ -29,24 +29,18 @@ class DashboardScreen extends ConsumerWidget {
             floating: true,
             snap: true,
             expandedHeight: 0,
-            title: Row(
-              children: [
-                Text(
-                  'CholeBature',
-                  style: GoogleFonts.dmSans(
-                    color: context.appTextPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.8,
-                  ),
-                ),
-              ],
+            title: Text(
+              'CholeBature',
+              style: GoogleFonts.dmSans(
+                color: context.appTextPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8,
+              ),
             ),
             actions: [
-              // Theme toggle — only here in the AppBar
               GestureDetector(
                 onTap: () {
-                  // Cycle: system → light → dark → system
                   final next = switch (themeMode) {
                     ThemeMode.system => ThemeMode.light,
                     ThemeMode.light => ThemeMode.dark,
@@ -79,28 +73,50 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                const FilterBar(),
-                const Gap(20),
+                _MonthLabel(),
+                const Gap(16),
                 SummaryCards(
                   income: summary.income,
                   expense: summary.expense,
                   savings: summary.savings,
                   borrowed: summary.borrowed,
+                  lent: summary.lent,
                 ),
+                const Gap(16),
+                const BudgetBar(),
                 const Gap(16),
                 CategoryChart(data: catData),
                 const Gap(16),
                 _CategoryBreakdownList(
                     data: catData, total: summary.expense),
                 const Gap(64),
-                const FooterCredit()
+                const FooterCredit(),
               ]),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MonthLabel extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return Text(
+      '${months[now.month - 1]} ${now.year}',
+      style: GoogleFonts.dmSans(
+        color: context.appTextSecondary,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
       ),
     );
   }
@@ -186,23 +202,17 @@ class _CategoryBreakdownList extends StatelessWidget {
                     children: [
                       Icon(info.icon, color: info.color, size: 16),
                       const Gap(8),
-                      Text(
-                        info.label,
-                        style: GoogleFonts.dmSans(
-                          color: context.appTextSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                      Text(info.label,
+                          style: GoogleFonts.dmSans(
+                              color: context.appTextSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500)),
                       const Spacer(),
-                      Text(
-                        '₹${entry.value.toStringAsFixed(0)}',
-                        style: GoogleFonts.dmSans(
-                          color: context.appTextPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      Text('₹${entry.value.toStringAsFixed(0)}',
+                          style: GoogleFonts.dmSans(
+                              color: context.appTextPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
                     ],
                   ),
                   const Gap(6),

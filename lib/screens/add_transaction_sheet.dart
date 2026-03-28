@@ -9,27 +9,35 @@ import '../providers/transaction_provider.dart';
 import '../theme/app_theme.dart';
 
 class AddTransactionSheet extends ConsumerStatefulWidget {
-  /// Pass an existing transaction to edit it instead of creating a new one.
   final Transaction? existing;
 
-  const AddTransactionSheet({super.key, this.existing});
+  /// When set, the sheet opens with this type pre-selected.
+  /// Used by BorrowLendScreen to default to TransactionType.borrowed.
+  final TransactionType? defaultType;
+
+  const AddTransactionSheet({
+    super.key,
+    this.existing,
+    this.defaultType,
+  });
 
   @override
   ConsumerState<AddTransactionSheet> createState() =>
       _AddTransactionSheetState();
 }
 
-class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
+class _AddTransactionSheetState
+    extends ConsumerState<AddTransactionSheet> {
   final _titleCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
-  TransactionType _type = TransactionType.expense;
-  TransactionCategory _category = TransactionCategory.food;
+
+  late TransactionType _type;
+  late TransactionCategory _category;
   DateTime _date = DateTime.now();
   bool _saving = false;
 
   static const _uuid = Uuid();
-
   bool get _isEditing => widget.existing != null;
 
   @override
@@ -43,6 +51,10 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
       _type = tx.type;
       _category = tx.category;
       _date = tx.date;
+    } else {
+      // Use defaultType if provided, otherwise expense
+      _type = widget.defaultType ?? TransactionType.expense;
+      _category = _defaultCategoryFor(_type);
     }
   }
 
@@ -52,6 +64,19 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
     _amountCtrl.dispose();
     _noteCtrl.dispose();
     super.dispose();
+  }
+
+  TransactionCategory _defaultCategoryFor(TransactionType type) {
+    switch (type) {
+      case TransactionType.expense:
+        return TransactionCategory.food;
+      case TransactionType.income:
+        return TransactionCategory.salary;
+      case TransactionType.borrowed:
+        return TransactionCategory.borrowed;
+      case TransactionType.lend:
+        return TransactionCategory.lend;
+    }
   }
 
   Future<void> _pickDate() async {
@@ -68,30 +93,22 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
     final rawTitle = _titleCtrl.text.trim();
     final raw = _amountCtrl.text.trim();
 
-    if (rawTitle.isEmpty) {
-      _showError('Please enter a title');
-      return;
-    }
-    if (raw.isEmpty) {
-      _showError('Please enter an amount');
-      return;
-    }
-
+    if (rawTitle.isEmpty) { _showError('Please enter a title'); return; }
+    if (raw.isEmpty) { _showError('Please enter an amount'); return; }
     final amount = double.tryParse(raw);
     if (amount == null || amount <= 0) {
       _showError('Enter a valid amount');
       return;
     }
 
-    // Confirm update
     if (_isEditing) {
-      final confirmed = await _confirmDialog('Update Transaction',
+      final confirmed = await _confirmDialog(
+          'Update Transaction',
           'Are you sure you want to update this transaction?');
       if (!confirmed) return;
     }
 
     setState(() => _saving = true);
-
     final tx = Transaction(
       id: _isEditing ? widget.existing!.id : _uuid.v4(),
       title: rawTitle,
@@ -113,13 +130,11 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: GoogleFonts.dmSans(color: Colors.white)),
-        backgroundColor: context.appExpense,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: GoogleFonts.dmSans(color: Colors.white)),
+      backgroundColor: context.appExpense,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   Future<bool> _confirmDialog(String title, String message) async {
@@ -134,7 +149,8 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                     color: context.appTextPrimary,
                     fontWeight: FontWeight.w700)),
             content: Text(message,
-                style: GoogleFonts.dmSans(color: context.appTextSecondary)),
+                style: GoogleFonts.dmSans(
+                    color: context.appTextSecondary)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -155,24 +171,20 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // KEY FIX: Use SingleChildScrollView + keyboard padding properly
-    // viewInsets.bottom gives keyboard height; we add it as bottom padding
-    // inside the scroll view so content scrolls above keyboard naturally.
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
       decoration: BoxDecoration(
         color: context.appSurface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      // Limit max height to avoid full-screen sheet on large phones
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.92,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag handle — outside scroll so it stays visible
           Padding(
             padding: const EdgeInsets.only(top: 12, bottom: 4),
             child: Center(
@@ -186,13 +198,12 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
               ),
             ),
           ),
-
-          // Scrollable content — this handles keyboard overflow correctly
           Flexible(
             child: SingleChildScrollView(
               keyboardDismissBehavior:
                   ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + keyboardHeight),
+              padding:
+                  EdgeInsets.fromLTRB(20, 8, 20, 20 + keyboardHeight),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -207,19 +218,15 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                   ),
                   const Gap(20),
 
-                  // ── Type toggle (3 options) ──
                   _TypeToggle(
                     selected: _type,
-                    onChanged: (t) {
-                      setState(() {
-                        _type = t;
-                        _category = _defaultCategoryFor(t);
-                      });
-                    },
+                    onChanged: (t) => setState(() {
+                      _type = t;
+                      _category = _defaultCategoryFor(t);
+                    }),
                   ),
                   const Gap(16),
 
-                  // ── Title ──
                   TextField(
                     controller: _titleCtrl,
                     textCapitalization: TextCapitalization.sentences,
@@ -233,11 +240,10 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                   ),
                   const Gap(12),
 
-                  // ── Amount ──
                   TextField(
                     controller: _amountCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(
                           RegExp(r'^\d+\.?\d{0,2}'))
@@ -255,7 +261,6 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                   ),
                   const Gap(12),
 
-                  // ── Category ──
                   _CategoryPicker(
                     selected: _category,
                     type: _type,
@@ -263,7 +268,6 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                   ),
                   const Gap(12),
 
-                  // ── Date ──
                   GestureDetector(
                     onTap: _pickDate,
                     child: Container(
@@ -282,9 +286,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                           Text(
                             '${_date.day}/${_date.month}/${_date.year}',
                             style: GoogleFonts.dmSans(
-                              color: context.appTextPrimary,
-                              fontSize: 14,
-                            ),
+                                color: context.appTextPrimary, fontSize: 14),
                           ),
                           const Spacer(),
                           Icon(Icons.chevron_right_rounded,
@@ -295,7 +297,6 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                   ),
                   const Gap(12),
 
-                  // ── Note ──
                   TextField(
                     controller: _noteCtrl,
                     style: GoogleFonts.dmSans(
@@ -309,7 +310,6 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                   ),
                   const Gap(24),
 
-                  // ── Save button ──
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -321,9 +321,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
+                                  strokeWidth: 2, color: Colors.white),
                             )
                           : Text(_isEditing
                               ? 'Update Transaction'
@@ -338,20 +336,9 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
       ),
     );
   }
-
-  TransactionCategory _defaultCategoryFor(TransactionType type) {
-    switch (type) {
-      case TransactionType.expense:
-        return TransactionCategory.food;
-      case TransactionType.income:
-        return TransactionCategory.salary;
-      case TransactionType.borrowed:
-        return TransactionCategory.borrowed;
-    }
-  }
 }
 
-// ─── Type Toggle (Expense / Income / Borrowed) ─────────────────────────────────
+// ── Type Toggle: all 4 types ───────────────────────────────────────────────────
 class _TypeToggle extends StatelessWidget {
   final TransactionType selected;
   final ValueChanged<TransactionType> onChanged;
@@ -368,38 +355,40 @@ class _TypeToggle extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _toggleItem(
-              context, TransactionType.expense, 'Expense', context.appExpense),
-          _toggleItem(
-              context, TransactionType.income, 'Income', context.appIncome),
-          _toggleItem(context, TransactionType.borrowed, 'Borrowed',
+          _item(context, TransactionType.expense, 'Expense',
+              context.appExpense),
+          _item(context, TransactionType.income, 'Income',
+              context.appIncome),
+          _item(context, TransactionType.borrowed, 'Borrow',
               context.appBorrowed),
+          _item(context, TransactionType.lend, 'Lend', context.appLend),
         ],
       ),
     );
   }
 
-  Widget _toggleItem(BuildContext context, TransactionType type, String label,
+  Widget _item(BuildContext context, TransactionType type, String label,
       Color color) {
-    final isSelected = selected == type;
+    final isSel = selected == type;
     return Expanded(
       child: GestureDetector(
         onTap: () => onChanged(type),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 11),
           decoration: BoxDecoration(
-            color: isSelected ? color.withValues(alpha: 0.15) : Colors.transparent,
+            color: isSel
+                ? color.withValues(alpha: 0.15)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             label,
             textAlign: TextAlign.center,
             style: GoogleFonts.dmSans(
-              color: isSelected ? color : context.appTextMuted,
-              fontWeight:
-                  isSelected ? FontWeight.w600 : FontWeight.w400,
-              fontSize: 13,
+              color: isSel ? color : context.appTextMuted,
+              fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
+              fontSize: 12,
             ),
           ),
         ),
@@ -408,7 +397,7 @@ class _TypeToggle extends StatelessWidget {
   }
 }
 
-// ─── Category Picker ───────────────────────────────────────────────────────────
+// ── Category Picker ────────────────────────────────────────────────────────────
 class _CategoryPicker extends StatelessWidget {
   final TransactionCategory selected;
   final TransactionType type;
@@ -420,53 +409,44 @@ class _CategoryPicker extends StatelessWidget {
     required this.onChanged,
   });
 
-  List<TransactionCategory> get _categories {
+  List<TransactionCategory> get _cats {
     switch (type) {
       case TransactionType.expense:
         return [
-          TransactionCategory.food,
-          TransactionCategory.travel,
-          TransactionCategory.essentials,
-          TransactionCategory.shop,
-          TransactionCategory.home,
-          TransactionCategory.health,
-          TransactionCategory.work,
-          TransactionCategory.misc,
+          TransactionCategory.food, TransactionCategory.travel,
+          TransactionCategory.essentials, TransactionCategory.shop,
+          TransactionCategory.home, TransactionCategory.health,
+          TransactionCategory.work, TransactionCategory.misc,
         ];
       case TransactionType.income:
         return [
-          TransactionCategory.salary,
-          TransactionCategory.cashback,
-          TransactionCategory.gifts,
-          TransactionCategory.otherIncome,
+          TransactionCategory.salary, TransactionCategory.cashback,
+          TransactionCategory.gifts, TransactionCategory.otherIncome,
         ];
       case TransactionType.borrowed:
         return [TransactionCategory.borrowed];
+      case TransactionType.lend:
+        return [TransactionCategory.lend];
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cats = _categories;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Category',
-          style: GoogleFonts.dmSans(
-            color: context.appTextSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
+        Text('Category',
+            style: GoogleFonts.dmSans(
+                color: context.appTextSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500)),
         const Gap(8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: cats.map((c) {
+          children: _cats.map((c) {
             final info = categoryInfoMap[c]!;
-            final isSelected = selected == c;
+            final isSel = selected == c;
             return GestureDetector(
               onTap: () => onChanged(c),
               child: AnimatedContainer(
@@ -474,35 +454,34 @@ class _CategoryPicker extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 7),
                 decoration: BoxDecoration(
-                  color: isSelected
+                  color: isSel
                       ? info.color.withValues(alpha: 0.18)
                       : context.appSurfaceElevated,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected ? info.color : context.appBorder,
-                    width: isSelected ? 1.5 : 1,
+                    color: isSel ? info.color : context.appBorder,
+                    width: isSel ? 1.5 : 1,
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(info.icon,
-                        color:
-                            isSelected ? info.color : context.appTextMuted,
+                        color: isSel
+                            ? info.color
+                            : context.appTextMuted,
                         size: 14),
                     const Gap(5),
-                    Text(
-                      info.label,
-                      style: GoogleFonts.dmSans(
-                        color: isSelected
-                            ? info.color
-                            : context.appTextSecondary,
-                        fontSize: 12,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                      ),
-                    ),
+                    Text(info.label,
+                        style: GoogleFonts.dmSans(
+                          color: isSel
+                              ? info.color
+                              : context.appTextSecondary,
+                          fontSize: 12,
+                          fontWeight: isSel
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        )),
                   ],
                 ),
               ),

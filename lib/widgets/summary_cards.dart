@@ -10,6 +10,7 @@ class SummaryCards extends StatelessWidget {
   final double expense;
   final double savings;
   final double borrowed;
+  final double lent;
 
   const SummaryCards({
     super.key,
@@ -17,6 +18,7 @@ class SummaryCards extends StatelessWidget {
     required this.expense,
     required this.savings,
     required this.borrowed,
+    this.lent = 0,
   });
 
   @override
@@ -25,7 +27,6 @@ class SummaryCards extends StatelessWidget {
       children: [
         Row(
           children: [
-            // Net Savings — green/red based on positive/negative
             Expanded(
               child: _BigCard(
                 title: 'Net Savings',
@@ -33,16 +34,15 @@ class SummaryCards extends StatelessWidget {
                     ? '${((savings / income) * 100).clamp(0.0, 100.0).toStringAsFixed(0)}% of income saved'
                     : 'No income recorded',
                 amount: savings,
-                progressValue:
-                    income > 0 ? (savings / income).clamp(0.0, 1.0) : 0.0,
-                cardColor: savings >= 0
-                    ? context.appIncome
-                    : context.appExpense,
+                progressValue: income > 0
+                    ? (savings / income).clamp(0.0, 1.0)
+                    : 0.0,
+                cardColor:
+                    savings >= 0 ? context.appIncome : context.appExpense,
                 icon: Icons.savings_rounded,
               ),
             ),
             const Gap(10),
-            // Net Worth — always blue; shows savings minus borrowed
             Expanded(
               child: _BigCard(
                 title: 'Net Worth',
@@ -53,7 +53,7 @@ class SummaryCards extends StatelessWidget {
                 progressValue: income > 0
                     ? ((savings - borrowed) / income).clamp(0.0, 1.0)
                     : 0.0,
-                cardColor: context.appAccent, // always blue
+                cardColor: context.appAccent,
                 icon: Icons.account_balance_rounded,
               ),
             ),
@@ -81,14 +81,30 @@ class SummaryCards extends StatelessWidget {
             ),
           ],
         ),
-        if (borrowed > 0) ...[
+        if (borrowed > 0 || lent > 0) ...[
           const Gap(10),
-          _MiniCard(
-            label: 'Borrowed',
-            amount: borrowed,
-            color: context.appBorrowed,
-            icon: Icons.handshake_rounded,
-            fullWidth: true,
+          Row(
+            children: [
+              if (borrowed > 0)
+                Expanded(
+                  child: _MiniCard(
+                    label: 'Borrowed',
+                    amount: borrowed,
+                    color: context.appBorrowed,
+                    icon: Icons.handshake_rounded,
+                  ),
+                ),
+              if (borrowed > 0 && lent > 0) const Gap(10),
+              if (lent > 0)
+                Expanded(
+                  child: _MiniCard(
+                    label: 'Lent Out',
+                    amount: lent,
+                    color: context.appLend,
+                    icon: Icons.send_rounded,
+                  ),
+                ),
+            ],
           ),
         ],
       ],
@@ -216,13 +232,15 @@ class _MiniCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final card = Container(
+    return Container(
       width: fullWidth ? double.infinity : null,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: context.isDark ? 0.08 : 0.06),
+        color: color.withValues(
+            alpha: context.isDark ? 0.08 : 0.06),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.22), width: 1),
+        border:
+            Border.all(color: color.withValues(alpha: 0.22), width: 1),
       ),
       child: Row(
         children: [
@@ -264,9 +282,7 @@ class _MiniCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-
-    return card
+    )
         .animate()
         .fadeIn(duration: 400.ms, delay: 150.ms)
         .slideY(begin: 0.1, end: 0, duration: 400.ms, delay: 150.ms);

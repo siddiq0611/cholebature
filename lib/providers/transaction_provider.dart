@@ -212,16 +212,22 @@ class TransactionNotifier
   Future<void> add(Transaction tx) async {
     await _db.insertTransaction(tx);
     await _load();
+    // Refresh the borrow/lend list so it picks up new borrowed/lend entries
+    _ref.read(borrowLendProvider.notifier).load();
   }
 
   Future<void> update(Transaction tx) async {
     await _db.updateTransaction(tx);
     await _load();
+    // Refresh the borrow/lend list so settlement changes are reflected
+    _ref.read(borrowLendProvider.notifier).load();
   }
 
   Future<void> delete(String id) async {
     await _db.deleteTransaction(id);
     await _load();
+    // Refresh the borrow/lend list so deleted entries disappear
+    _ref.read(borrowLendProvider.notifier).load();
   }
 
   Future<void> refresh() => _load();
@@ -289,7 +295,8 @@ final categoryExpenseProvider =
   );
 });
 
-// Borrow/Lend specific provider (all time — for the dedicated tab)
+// ─── Borrow/Lend provider ──────────────────────────────────────────────────────
+// NOTE: load() is public so TransactionNotifier can call it after mutations.
 final borrowLendProvider =
     StateNotifierProvider<BorrowLendNotifier,
         AsyncValue<List<Transaction>>>(

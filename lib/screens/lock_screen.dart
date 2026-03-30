@@ -20,12 +20,12 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   String? _error;
   bool _obscure = true;
   bool _loading = false;
-  LockType _lockType = LockType.none;
 
-  // The actual PIN length stored — we don't know it upfront, so we try
-  // to verify after 4 digits if correct, or keep accepting up to 6.
-  // We verify on each digit ≥ 4 attempt but only auto-submit on match.
-  int _pinMaxLength = 6; // default display — actual check drives flow
+  // Start as null so we show a spinner until _init() completes.
+  // This prevents the PIN pad from flashing before we know the lock type.
+  LockType? _lockType;
+
+  int _pinMaxLength = 6;
 
   @override
   void initState() {
@@ -34,8 +34,14 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   Future<void> _init() async {
+    // Show spinner while loading settings
+    setState(() => _loading = true);
     final settings = await SecurityService.loadSettings();
-    if (mounted) setState(() => _lockType = settings.lockType);
+    if (!mounted) return;
+    setState(() {
+      _lockType = settings.lockType;
+      _loading = false;
+    });
     if (settings.lockType == LockType.biometric) {
       await _tryBiometric();
     }
@@ -76,31 +82,24 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   void _onDigit(String d) {
-    // Allow up to 6 digits
     if (_pinInput.length >= 6) return;
     setState(() {
       _pinInput += d;
       _error = null;
     });
 
-    // Try verifying at every digit position ≥ 4.
-    // This handles both 4-digit and 6-digit PINs seamlessly:
-    // - 4-digit PIN: verifies on 4th digit, unlocks immediately if correct
-    // - 6-digit PIN: fails silently on 4th/5th, verifies on 6th
     if (_pinInput.length >= 4) {
       _tryPinAttempt(_pinInput);
     }
   }
 
   Future<void> _tryPinAttempt(String pin) async {
-    // Don't show loading spinner for intermediate attempts to avoid flicker
     final ok = await SecurityService.verifyCredential(pin);
     if (!mounted) return;
 
     if (ok) {
       _unlock();
     } else if (pin.length == 6) {
-      // Exhausted all digits — show error
       setState(() {
         _error = 'Incorrect PIN. Try again.';
         _pinInput = '';
@@ -155,11 +154,14 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                 ),
                 const Gap(8),
                 Text(
-                  _lockType == LockType.biometric
-                      ? 'Use biometric to unlock'
-                      : _lockType == LockType.pin
-                          ? 'Enter your PIN'
-                          : 'Enter your password',
+                  // Show generic subtitle until _lockType is known
+                  _lockType == null
+                      ? 'Checking lock settings…'
+                      : _lockType == LockType.biometric
+                          ? 'Use biometric to unlock'
+                          : _lockType == LockType.pin
+                              ? 'Enter your PIN'
+                              : 'Enter your password',
                   style: GoogleFonts.dmSans(
                       color: context.appTextSecondary, fontSize: 14),
                 ),
@@ -174,7 +176,8 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                 ],
                 const Gap(32),
 
-                if (_loading)
+                // Show spinner while _init() is running OR while verifying
+                if (_loading || _lockType == null)
                   CircularProgressIndicator(
                       color: context.appAccent,
                       strokeCap: StrokeCap.round)
@@ -247,7 +250,7 @@ class _PinInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Dot indicators — show up to maxLength dots
+        // Dot indicators
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(maxLength, (i) {
@@ -261,8 +264,7 @@ class _PinInput extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: filled ? context.appAccent : Colors.transparent,
                 border: Border.all(
-                  color:
-                      filled ? context.appAccent : context.appBorder,
+                  color: filled ? context.appAccent : context.appBorder,
                   width: 2,
                 ),
               ),
@@ -293,13 +295,11 @@ class _PinInput extends StatelessWidget {
                     child: Container(
                       width: 72,
                       height: 72,
-                      margin:
-                          const EdgeInsets.symmetric(horizontal: 8),
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
                         color: context.appSurfaceElevated,
                         shape: BoxShape.circle,
-                        border:
-                            Border.all(color: context.appBorder),
+                        border: Border.all(color: context.appBorder),
                       ),
                       child: Center(
                         child: Text(
@@ -344,6 +344,10 @@ class _PasswordInput extends StatelessWidget {
           controller: controller,
           obscureText: obscure,
           autofocus: true,
+          // FIX: explicitly set text keyboard so the password field never
+          // inherits a numeric keyboard type
+          keyboardType: TextInputType.text,
+          textInputAction: TextInputAction.done,
           style: GoogleFonts.dmSans(color: context.appTextPrimary),
           decoration: InputDecoration(
             labelText: 'Password',

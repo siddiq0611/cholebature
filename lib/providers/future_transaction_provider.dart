@@ -1,3 +1,9 @@
+// Key change: markDone now accepts an optional overrideAmount.
+// This is used when the FutureTransaction has amount == 0 (variable),
+// in which case the user enters the actual amount at completion time.
+// If amount > 0 (fixed), overrideAmount can still be passed to allow
+// the user to change it at mark-done time.
+//
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/future_transaction_model.dart';
@@ -33,9 +39,7 @@ class FutureTransactionNotifier
   }
 
   Future<void> add(FutureTransaction ft) async {
-    final withId = ft.id.isEmpty
-        ? ft.copyWith(id: _uuid.v4())
-        : ft;
+    final withId = ft.id.isEmpty ? ft.copyWith(id: _uuid.v4()) : ft;
     await _db.insertFutureTransaction(withId);
     await NotificationService.scheduleReminders(withId);
     await load();
@@ -54,14 +58,31 @@ class FutureTransactionNotifier
   }
 
   /// Mark a future transaction as done for the current cycle.
-  /// Creates a real Transaction and advances the recurring schedule.
-  Future<void> markDone(FutureTransaction ft,
-      {DateTime? recordDate}) async {
+  ///
+  /// [overrideAmount]: the actual amount to record. Required when
+  /// ft.amount == 0 (variable). Optional when ft.amount > 0 — if
+  /// provided it overrides the stored amount (user changed it at
+  /// mark-done time).
+  ///
+  /// [recordDate]: the date to stamp on the real transaction.
+  Future<void> markDone(
+    FutureTransaction ft, {
+    double? overrideAmount,
+    DateTime? recordDate,
+  }) async {
+    // Resolve the final amount:
+    // 1. overrideAmount wins if provided
+    // 2. ft.amount used if non-zero
+    // 3. Fallback to 0 (shouldn't happen — UI enforces amount entry)
+    final finalAmount = (overrideAmount != null && overrideAmount > 0)
+        ? overrideAmount
+        : ft.amount;
+
     // 1. Create a real transaction
     final tx = Transaction(
       id: _uuid.v4(),
       title: ft.title,
-      amount: ft.amount,
+      amount: finalAmount,
       category: ft.category,
       type: ft.type,
       date: recordDate ?? DateTime.now(),
@@ -71,10 +92,8 @@ class FutureTransactionNotifier
 
     // 2. Handle recurrence
     if (ft.recurrence == RecurrenceType.once) {
-      // One-time: delete it
       await delete(ft.id);
     } else {
-      // Recurring: advance nextDue and reset status
       final next = _computeNextDue(ft);
       final updated = ft.copyWith(
         nextDue: next,
@@ -116,7 +135,7 @@ class FutureTransactionNotifier
     await load();
   }
 
-  // ─── Next due date logic ──────────────────────────────────────────────────
+  // ── Next due date computation ──────────────────────────────────────────────
 
   DateTime _computeNextDue(FutureTransaction ft) {
     switch (ft.recurrence) {
@@ -130,16 +149,12 @@ class FutureTransactionNotifier
         if (ft.recurrenceDays.isEmpty) {
           return ft.nextDue.add(const Duration(days: 7));
         }
-        // Find next matching weekday after current nextDue
         var candidate = ft.nextDue.add(const Duration(days: 1));
         for (var i = 0; i < 8; i++) {
           if (ft.recurrenceDays.contains(candidate.weekday)) {
             return DateTime(
-              candidate.year,
-              candidate.month,
-              candidate.day,
-              ft.nextDue.hour,
-              ft.nextDue.minute,
+              candidate.year, candidate.month, candidate.day,
+              ft.nextDue.hour, ft.nextDue.minute,
             );
           }
           candidate = candidate.add(const Duration(days: 1));
@@ -149,23 +164,18 @@ class FutureTransactionNotifier
       case RecurrenceType.monthly:
         var year = ft.nextDue.year;
         var month = ft.nextDue.month + 1;
-        if (month > 12) {
-          month = 1;
-          year++;
-        }
-        // Clamp day to valid range for that month
+        if (month > 12) { month = 1; year++; }
         final daysInMonth = DateTime(year, month + 1, 0).day;
         final day = ft.nextDue.day.clamp(1, daysInMonth);
-        return DateTime(year, month, day, ft.nextDue.hour,
-            ft.nextDue.minute);
+        return DateTime(year, month, day, ft.nextDue.hour, ft.nextDue.minute);
     }
   }
 }
 
-// Derived providers for UI
+// ── Derived providers ──────────────────────────────────────────────────────────
+
 final overdueCountProvider = Provider<int>((ref) {
-  final async = ref.watch(futureTransactionProvider);
-  return async.when(
+  return ref.watch(futureTransactionProvider).when(
     data: (list) => list.where((ft) => ft.isOverdue).length,
     loading: () => 0,
     error: (_, __) => 0,

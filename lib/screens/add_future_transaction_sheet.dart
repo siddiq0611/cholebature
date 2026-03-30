@@ -1,3 +1,7 @@
+// Amount is OPTIONAL when scheduling.
+// If left blank → the "Mark Done" dialog asks for it at completion time.
+// If filled     → pre-filled in the "Mark Done" dialog but still editable.
+//
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,10 +25,9 @@ class AddFutureTransactionSheet extends ConsumerStatefulWidget {
 class _AddFutureTransactionSheetState
     extends ConsumerState<AddFutureTransactionSheet> {
   final _titleCtrl = TextEditingController();
-  final _amountCtrl = TextEditingController();
+  final _amountCtrl = TextEditingController(); // optional
   final _noteCtrl = TextEditingController();
 
-  // Only expense and income for scheduled transactions
   TransactionType _type = TransactionType.expense;
   TransactionCategory _category = TransactionCategory.food;
   RecurrenceType _recurrence = RecurrenceType.once;
@@ -53,9 +56,10 @@ class _AddFutureTransactionSheetState
     if (_isEditing) {
       final ft = widget.existing!;
       _titleCtrl.text = ft.title;
-      _amountCtrl.text = ft.amount.toStringAsFixed(2);
+      if (ft.amount > 0) {
+        _amountCtrl.text = ft.amount.toStringAsFixed(2);
+      }
       _noteCtrl.text = ft.note ?? '';
-      // Clamp to expense/income only
       _type = ft.type == TransactionType.income
           ? TransactionType.income
           : TransactionType.expense;
@@ -95,9 +99,7 @@ class _AddFutureTransactionSheetState
     if (!mounted) return;
     setState(() {
       _nextDue = DateTime(
-        picked.year,
-        picked.month,
-        picked.day,
+        picked.year, picked.month, picked.day,
         time?.hour ?? _nextDue.hour,
         time?.minute ?? _nextDue.minute,
       );
@@ -106,39 +108,55 @@ class _AddFutureTransactionSheetState
 
   Future<void> _save() async {
     final rawTitle = _titleCtrl.text.trim();
-    final raw = _amountCtrl.text.trim();
-
     if (rawTitle.isEmpty) { _showError('Please enter a title'); return; }
-    if (raw.isEmpty) { _showError('Please enter an amount'); return; }
-    final amount = double.tryParse(raw);
-    if (amount == null || amount <= 0) { _showError('Enter a valid amount'); return; }
     if (_recurrence == RecurrenceType.weekly && _recurrenceDays.isEmpty) {
       _showError('Please select at least one day for weekly recurrence');
       return;
     }
 
-    setState(() => _saving = true);
-    final ft = FutureTransaction(
-      id: _isEditing ? widget.existing!.id : _uuid.v4(),
-      title: rawTitle,
-      amount: amount,
-      category: _category,
-      type: _type,
-      note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      recurrence: _recurrence,
-      recurrenceDays: _recurrenceDays,
-      nextDue: _nextDue,
-      reminderOffsets: _reminderOffsets.isEmpty ? [0] : _reminderOffsets,
-      createdAt: _isEditing ? widget.existing!.createdAt : DateTime.now(),
-    );
-
-    final notifier = ref.read(futureTransactionProvider.notifier);
-    if (_isEditing) {
-      await notifier.update(ft);
-    } else {
-      await notifier.add(ft);
+    // Amount is optional — store 0 if blank (means "ask at mark-done time")
+    final raw = _amountCtrl.text.trim();
+    double amount = 0;
+    if (raw.isNotEmpty) {
+      final parsed = double.tryParse(raw);
+      if (parsed == null || parsed < 0) {
+        _showError('Enter a valid amount or leave blank');
+        return;
+      }
+      amount = parsed;
     }
-    if (mounted) Navigator.pop(context);
+
+    setState(() => _saving = true);
+
+    try {
+      final ft = FutureTransaction(
+        id: _isEditing ? widget.existing!.id : _uuid.v4(),
+        title: rawTitle,
+        amount: amount,
+        category: _category,
+        type: _type,
+        note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+        recurrence: _recurrence,
+        recurrenceDays: _recurrenceDays,
+        nextDue: _nextDue,
+        reminderOffsets: _reminderOffsets.isEmpty ? [0] : _reminderOffsets,
+        createdAt: _isEditing ? widget.existing!.createdAt : DateTime.now(),
+      );
+
+      final notifier = ref.read(futureTransactionProvider.notifier);
+      if (_isEditing) {
+        await notifier.update(ft);
+      } else {
+        await notifier.add(ft);
+      }
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        _showError('Failed to save: ${e.toString()}');
+      }
+    }
   }
 
   void _showError(String msg) {
@@ -152,6 +170,7 @@ class _AddFutureTransactionSheetState
   @override
   Widget build(BuildContext context) {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final amountIsBlank = _amountCtrl.text.trim().isEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -176,27 +195,21 @@ class _AddFutureTransactionSheetState
           ),
           Flexible(
             child: SingleChildScrollView(
-              keyboardDismissBehavior:
-                  ScrollViewKeyboardDismissBehavior.onDrag,
-              padding:
-                  EdgeInsets.fromLTRB(20, 8, 20, 20 + keyboardHeight),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + keyboardHeight),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _isEditing
-                        ? 'Edit Scheduled Transaction'
-                        : 'Schedule Transaction',
+                    _isEditing ? 'Edit Scheduled Transaction' : 'Schedule Transaction',
                     style: GoogleFonts.dmSans(
-                      color: context.appTextPrimary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
+                      color: context.appTextPrimary, fontSize: 20,
+                      fontWeight: FontWeight.w700, letterSpacing: -0.5,
                     ),
                   ),
                   const Gap(20),
 
-                  // ── Type toggle: Expense / Income only ──────────────────
+                  // ── Type ─────────────────────────────────────────────────
                   _TypeToggle(
                     selected: _type,
                     onChanged: (t) => setState(() {
@@ -220,7 +233,7 @@ class _AddFutureTransactionSheetState
                   ),
                   const Gap(12),
 
-                  // ── Amount ───────────────────────────────────────────────
+                  // ── Amount (optional) ────────────────────────────────────
                   TextField(
                     controller: _amountCtrl,
                     keyboardType:
@@ -229,29 +242,63 @@ class _AddFutureTransactionSheetState
                       FilteringTextInputFormatter.allow(
                           RegExp(r'^\d+\.?\d{0,2}'))
                     ],
+                    onChanged: (_) => setState(() {}),
                     style: GoogleFonts.dmSans(
-                      color: context.appTextPrimary,
-                      fontSize: 18,
+                      color: context.appTextPrimary, fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
                     decoration: InputDecoration(
-                      labelText: 'Amount (₹)',
+                      labelText: 'Amount (₹)  — optional',
+                      hintText: 'Leave blank to enter when marking done',
+                      hintStyle: GoogleFonts.dmSans(
+                          color: context.appTextMuted, fontSize: 12),
                       prefixIcon: Icon(Icons.currency_rupee_rounded,
                           color: context.appTextMuted, size: 18),
+                      suffixIcon: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Chip(
+                          label: Text(
+                            amountIsBlank ? 'Variable' : 'Fixed',
+                            style: GoogleFonts.dmSans(
+                              color: amountIsBlank
+                                  ? context.appBorrowed
+                                  : context.appIncome,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          backgroundColor: (amountIsBlank
+                                  ? context.appBorrowed
+                                  : context.appIncome)
+                              .withValues(alpha: 0.12),
+                          side: BorderSide.none,
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 4),
+                    child: Text(
+                      amountIsBlank
+                          ? 'You\'ll be asked to enter the amount when marking as done'
+                          : 'Amount pre-filled at mark-done but can be changed',
+                      style: GoogleFonts.dmSans(
+                          color: context.appTextMuted, fontSize: 11),
                     ),
                   ),
                   const Gap(12),
 
                   // ── Category ─────────────────────────────────────────────
                   _CategoryPicker(
-                    selected: _category,
-                    type: _type,
+                    selected: _category, type: _type,
                     onChanged: (c) => setState(() => _category = c),
                   ),
                   const Gap(12),
 
                   // ── Recurrence ───────────────────────────────────────────
-                  const _SectionLabel(label: 'Recurrence'),
+                  _SectionLabel(label: 'Recurrence'),
                   const Gap(8),
                   _RecurrencePicker(
                     selected: _recurrence,
@@ -260,18 +307,17 @@ class _AddFutureTransactionSheetState
                   const Gap(12),
 
                   if (_recurrence == RecurrenceType.weekly) ...[
-                    const _SectionLabel(label: 'Days of Week'),
+                    _SectionLabel(label: 'Days of Week'),
                     const Gap(8),
                     _WeekdayPicker(
                       selected: _recurrenceDays,
-                      onChanged: (d) =>
-                          setState(() => _recurrenceDays = d),
+                      onChanged: (d) => setState(() => _recurrenceDays = d),
                     ),
                     const Gap(12),
                   ],
 
                   // ── Due date/time ────────────────────────────────────────
-                  const _SectionLabel(label: 'Next Due Date & Time'),
+                  _SectionLabel(label: 'Next Due Date & Time'),
                   const Gap(8),
                   GestureDetector(
                     onTap: _pickDueDate,
@@ -304,11 +350,10 @@ class _AddFutureTransactionSheetState
                   const Gap(12),
 
                   // ── Reminders ────────────────────────────────────────────
-                  const _SectionLabel(label: 'Reminders'),
+                  _SectionLabel(label: 'Reminders'),
                   const Gap(8),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: 8, runSpacing: 8,
                     children: _availableOffsets.map((o) {
                       final isSel = _reminderOffsets.contains(o.minutes);
                       return GestureDetector(
@@ -329,24 +374,20 @@ class _AddFutureTransactionSheetState
                                 : context.appSurfaceElevated,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: isSel
-                                  ? context.appAccent
-                                  : context.appBorder,
+                              color: isSel ? context.appAccent : context.appBorder,
                               width: isSel ? 1.5 : 1,
                             ),
                           ),
-                          child: Text(
-                            o.label,
-                            style: GoogleFonts.dmSans(
-                              color: isSel
-                                  ? context.appAccent
-                                  : context.appTextSecondary,
-                              fontSize: 12,
-                              fontWeight: isSel
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
-                          ),
+                          child: Text(o.label,
+                              style: GoogleFonts.dmSans(
+                                color: isSel
+                                    ? context.appAccent
+                                    : context.appTextSecondary,
+                                fontSize: 12,
+                                fontWeight: isSel
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              )),
                         ),
                       );
                     }).toList(),
@@ -377,11 +418,8 @@ class _AddFutureTransactionSheetState
                           ? const SizedBox(
                               width: 20, height: 20,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
-                          : Text(_isEditing
-                              ? 'Update Schedule'
-                              : 'Save Schedule'),
+                                  strokeWidth: 2, color: Colors.white))
+                          : Text(_isEditing ? 'Update Schedule' : 'Save Schedule'),
                     ),
                   ),
                 ],
@@ -394,28 +432,22 @@ class _AddFutureTransactionSheetState
   }
 }
 
-// ── Sub-widgets ───────────────────────────────────────────────────────────────
+// ── Sub-widgets ────────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String label;
   const _SectionLabel({required this.label});
-
   @override
-  Widget build(BuildContext context) => Text(
-        label,
-        style: GoogleFonts.dmSans(
+  Widget build(BuildContext context) => Text(label,
+      style: GoogleFonts.dmSans(
           color: context.appTextSecondary,
           fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      );
+          fontWeight: FontWeight.w500));
 }
 
-/// Only Expense / Income
 class _TypeToggle extends StatelessWidget {
   final TransactionType selected;
   final ValueChanged<TransactionType> onChanged;
-
   const _TypeToggle({required this.selected, required this.onChanged});
 
   @override
@@ -426,19 +458,14 @@ class _TypeToggle extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.appBorder),
       ),
-      child: Row(
-        children: [
-          _item(context, TransactionType.expense, 'Expense',
-              context.appExpense),
-          _item(context, TransactionType.income, 'Income',
-              context.appIncome),
-        ],
-      ),
+      child: Row(children: [
+        _item(context, TransactionType.expense, 'Expense', context.appExpense),
+        _item(context, TransactionType.income, 'Income', context.appIncome),
+      ]),
     );
   }
 
-  Widget _item(BuildContext context, TransactionType type, String label,
-      Color color) {
+  Widget _item(BuildContext ctx, TransactionType type, String label, Color color) {
     final isSel = selected == type;
     return Expanded(
       child: GestureDetector(
@@ -447,20 +474,15 @@ class _TypeToggle extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: isSel
-                ? color.withValues(alpha: 0.15)
-                : Colors.transparent,
+            color: isSel ? color.withValues(alpha: 0.15) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.dmSans(
-              color: isSel ? color : context.appTextMuted,
-              fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
-              fontSize: 13,
-            ),
-          ),
+          child: Text(label,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                  color: isSel ? color : ctx.appTextMuted,
+                  fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
+                  fontSize: 13)),
         ),
       ),
     );
@@ -470,19 +492,13 @@ class _TypeToggle extends StatelessWidget {
 class _RecurrencePicker extends StatelessWidget {
   final RecurrenceType selected;
   final ValueChanged<RecurrenceType> onChanged;
-
-  const _RecurrencePicker(
-      {required this.selected, required this.onChanged});
+  const _RecurrencePicker({required this.selected, required this.onChanged});
 
   static const _options = [
-    (type: RecurrenceType.once, label: 'One-time',
-        icon: Icons.looks_one_rounded),
-    (type: RecurrenceType.daily, label: 'Daily',
-        icon: Icons.today_rounded),
-    (type: RecurrenceType.weekly, label: 'Weekly',
-        icon: Icons.view_week_rounded),
-    (type: RecurrenceType.monthly, label: 'Monthly',
-        icon: Icons.calendar_month_rounded),
+    (type: RecurrenceType.once, label: 'One-time', icon: Icons.looks_one_rounded),
+    (type: RecurrenceType.daily, label: 'Daily', icon: Icons.today_rounded),
+    (type: RecurrenceType.weekly, label: 'Weekly', icon: Icons.view_week_rounded),
+    (type: RecurrenceType.monthly, label: 'Monthly', icon: Icons.calendar_month_rounded),
   ];
 
   @override
@@ -503,31 +519,19 @@ class _RecurrencePicker extends StatelessWidget {
                     : context.appSurfaceElevated,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSel ? context.appAccent : context.appBorder,
-                  width: isSel ? 1.5 : 1,
-                ),
+                    color: isSel ? context.appAccent : context.appBorder,
+                    width: isSel ? 1.5 : 1),
               ),
-              child: Column(
-                children: [
-                  Icon(o.icon,
-                      size: 16,
-                      color: isSel
-                          ? context.appAccent
-                          : context.appTextMuted),
-                  const Gap(4),
-                  Text(
-                    o.label,
+              child: Column(children: [
+                Icon(o.icon, size: 16,
+                    color: isSel ? context.appAccent : context.appTextMuted),
+                const Gap(4),
+                Text(o.label,
                     style: GoogleFonts.dmSans(
-                      color: isSel
-                          ? context.appAccent
-                          : context.appTextSecondary,
-                      fontSize: 10,
-                      fontWeight:
-                          isSel ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
+                        color: isSel ? context.appAccent : context.appTextSecondary,
+                        fontSize: 10,
+                        fontWeight: isSel ? FontWeight.w600 : FontWeight.w400)),
+              ]),
             ),
           ),
         );
@@ -539,9 +543,7 @@ class _RecurrencePicker extends StatelessWidget {
 class _WeekdayPicker extends StatelessWidget {
   final List<int> selected;
   final ValueChanged<List<int>> onChanged;
-
-  const _WeekdayPicker(
-      {required this.selected, required this.onChanged});
+  const _WeekdayPicker({required this.selected, required this.onChanged});
 
   static const _days = [
     (day: 1, label: 'M'), (day: 2, label: 'T'), (day: 3, label: 'W'),
@@ -568,25 +570,16 @@ class _WeekdayPicker extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 2),
               height: 36,
               decoration: BoxDecoration(
-                color: isSel
-                    ? context.appAccent
-                    : context.appSurfaceElevated,
+                color: isSel ? context.appAccent : context.appSurfaceElevated,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                    color: isSel
-                        ? context.appAccent
-                        : context.appBorder),
+                    color: isSel ? context.appAccent : context.appBorder),
               ),
               child: Center(
-                child: Text(
-                  d.label,
-                  style: GoogleFonts.dmSans(
-                    color:
-                        isSel ? Colors.white : context.appTextSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                child: Text(d.label,
+                    style: GoogleFonts.dmSans(
+                        color: isSel ? Colors.white : context.appTextSecondary,
+                        fontSize: 12, fontWeight: FontWeight.w600)),
               ),
             ),
           ),
@@ -600,31 +593,21 @@ class _CategoryPicker extends StatelessWidget {
   final TransactionCategory selected;
   final TransactionType type;
   final ValueChanged<TransactionCategory> onChanged;
-
-  const _CategoryPicker({
-    required this.selected,
-    required this.type,
-    required this.onChanged,
-  });
+  const _CategoryPicker(
+      {required this.selected, required this.type, required this.onChanged});
 
   List<TransactionCategory> get _cats {
     if (type == TransactionType.income) {
       return [
-        TransactionCategory.salary,
-        TransactionCategory.cashback,
-        TransactionCategory.gifts,
-        TransactionCategory.otherIncome,
+        TransactionCategory.salary, TransactionCategory.cashback,
+        TransactionCategory.gifts, TransactionCategory.otherIncome,
       ];
     }
     return [
-      TransactionCategory.food,
-      TransactionCategory.travel,
-      TransactionCategory.essentials,
-      TransactionCategory.shop,
-      TransactionCategory.home,
-      TransactionCategory.health,
-      TransactionCategory.work,
-      TransactionCategory.misc,
+      TransactionCategory.food, TransactionCategory.travel,
+      TransactionCategory.essentials, TransactionCategory.shop,
+      TransactionCategory.home, TransactionCategory.health,
+      TransactionCategory.work, TransactionCategory.misc,
     ];
   }
 
@@ -635,13 +618,11 @@ class _CategoryPicker extends StatelessWidget {
       children: [
         Text('Category',
             style: GoogleFonts.dmSans(
-                color: context.appTextSecondary,
-                fontSize: 12,
+                color: context.appTextSecondary, fontSize: 12,
                 fontWeight: FontWeight.w500)),
         const Gap(8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 8, runSpacing: 8,
           children: _cats.map((c) {
             final info = categoryInfoMap[c]!;
             final isSel = selected == c;
@@ -649,37 +630,28 @@ class _CategoryPicker extends StatelessWidget {
               onTap: () => onChanged(c),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 7),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 decoration: BoxDecoration(
                   color: isSel
                       ? info.color.withValues(alpha: 0.18)
                       : context.appSurfaceElevated,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSel ? info.color : context.appBorder,
-                    width: isSel ? 1.5 : 1,
-                  ),
+                      color: isSel ? info.color : context.appBorder,
+                      width: isSel ? 1.5 : 1),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(info.icon,
-                        color: isSel ? info.color : context.appTextMuted,
-                        size: 14),
-                    const Gap(5),
-                    Text(info.label,
-                        style: GoogleFonts.dmSans(
-                          color: isSel
-                              ? info.color
-                              : context.appTextSecondary,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(info.icon,
+                      color: isSel ? info.color : context.appTextMuted,
+                      size: 14),
+                  const Gap(5),
+                  Text(info.label,
+                      style: GoogleFonts.dmSans(
+                          color: isSel ? info.color : context.appTextSecondary,
                           fontSize: 12,
-                          fontWeight: isSel
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        )),
-                  ],
-                ),
+                          fontWeight:
+                              isSel ? FontWeight.w600 : FontWeight.w400)),
+                ]),
               ),
             );
           }).toList(),

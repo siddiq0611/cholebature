@@ -29,6 +29,10 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await android?.requestNotificationsPermission();
+    // Request exact alarm permission on Android 12+ (API 31+).
+    // This is a best-effort request — the user may deny it, in which case
+    // scheduleReminders() falls back to inexact alarms automatically.
+    await android?.requestExactAlarmsPermission();
 
     final ios = _plugin
         .resolvePlatformSpecificImplementation<
@@ -47,46 +51,86 @@ class NotificationService {
       if (triggerAt.isBefore(DateTime.now())) continue;
 
       final notifId = _notifId(ft.id, offsetMinutes);
-      String body;
-      if (offsetMinutes == 0) {
-        body = '₹${ft.amount.toStringAsFixed(0)} — due now!';
-      } else if (offsetMinutes < 60) {
-        body = '₹${ft.amount.toStringAsFixed(0)} — due in ${offsetMinutes}m';
-      } else if (offsetMinutes < 1440) {
-        body =
-            '₹${ft.amount.toStringAsFixed(0)} — due in ${offsetMinutes ~/ 60}h';
-      } else {
-        body =
-            '₹${ft.amount.toStringAsFixed(0)} — due in ${offsetMinutes ~/ 1440} day(s)';
-      }
+      final body = _buildBody(ft, offsetMinutes);
 
+      // Try exact alarm first; fall back to inexact if the permission is
+      // denied (throws PlatformException on Android 12+ when not granted).
+      await _scheduleWithFallback(notifId, ft.title, body, triggerAt, ft.id);
+    }
+  }
+
+  static String _buildBody(FutureTransaction ft, int offsetMinutes) {
+    final amountStr = ft.amount > 0
+        ? '₹${ft.amount.toStringAsFixed(0)}'
+        : 'Variable amount';
+    if (offsetMinutes == 0) return '$amountStr — due now!';
+    if (offsetMinutes < 60) return '$amountStr — due in ${offsetMinutes}m';
+    if (offsetMinutes < 1440) {
+      return '$amountStr — due in ${offsetMinutes ~/ 60}h';
+    }
+    return '$amountStr — due in ${offsetMinutes ~/ 1440} day(s)';
+  }
+
+  static Future<void> _scheduleWithFallback(
+    int notifId,
+    String title,
+    String body,
+    DateTime triggerAt,
+    String payload,
+  ) async {
+    final tzTime = tz.TZDateTime.from(triggerAt, tz.local);
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'future_transactions',
+        'Scheduled Transactions',
+        channelDescription: 'Reminders for scheduled transactions',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+      iOS: DarwinNotificationDetails(),
+    );
+
+    // First attempt: exact alarm (requires SCHEDULE_EXACT_ALARM permission).
+    try {
       await _plugin.zonedSchedule(
         notifId,
-        ft.title,
+        title,
         body,
-        tz.TZDateTime.from(triggerAt, tz.local),
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'future_transactions',
-            'Scheduled Transactions',
-            channelDescription: 'Reminders for scheduled transactions',
-            importance: Importance.high,
-            priority: Priority.high,
-            icon: '@mipmap/ic_launcher',
-          ),
-          iOS: const DarwinNotificationDetails(),
-        ),
+        tzTime,
+        details,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
-        payload: ft.id,
+        payload: payload,
       );
+      return; // success — done
+    } catch (_) {
+      // Exact alarm permission denied or unavailable — fall through to inexact.
+    }
+
+    // Second attempt: inexact alarm (always permitted, may fire a few minutes
+    // late but still works reliably).
+    try {
+      await _plugin.zonedSchedule(
+        notifId,
+        title,
+        body,
+        tzTime,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
+      );
+    } catch (_) {
+      // If even inexact fails (e.g. notifications fully disabled), silently
+      // swallow — the transaction will still be saved, just without a reminder.
     }
   }
 
   /// Cancel all reminders for a given future transaction id.
   static Future<void> cancelReminders(String ftId) async {
-    // We use offsets 0, 30, 60, 120, 1440 as standard; cancel a range
     const possibleOffsets = [0, 15, 30, 60, 120, 180, 360, 720, 1440, 2880];
     for (final offset in possibleOffsets) {
       await _plugin.cancel(_notifId(ftId, offset));
@@ -99,7 +143,6 @@ class NotificationService {
 
   /// Deterministic int ID from a string id + offset.
   static int _notifId(String ftId, int offsetMinutes) {
-    // Use hash of id + offset, keep within int32 range
     return (ftId.hashCode ^ (offsetMinutes * 31)).abs() % 2147483647;
   }
 }

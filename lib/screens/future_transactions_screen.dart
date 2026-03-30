@@ -1,4 +1,6 @@
+// lib/screens/future_transactions_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -41,7 +43,7 @@ class FutureTransactionsScreen extends ConsumerWidget {
                   context: context,
                   isScrollControlled: true,
                   backgroundColor: Colors.transparent,
-                  builder: (_) => AddFutureTransactionSheet(),
+                  builder: (_) => const AddFutureTransactionSheet(),
                 ),
                 child: Container(
                   padding:
@@ -57,14 +59,11 @@ class FutureTransactionsScreen extends ConsumerWidget {
                       const Icon(Icons.add_rounded,
                           color: Colors.white, size: 18),
                       const Gap(4),
-                      Text(
-                        'Schedule',
-                        style: GoogleFonts.dmSans(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
+                      Text('Schedule',
+                          style: GoogleFonts.dmSans(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13)),
                     ],
                   ),
                 ),
@@ -74,32 +73,23 @@ class FutureTransactionsScreen extends ConsumerWidget {
           ftAsync.when(
             loading: () => SliverFillRemaining(
               child: Center(
-                child: CircularProgressIndicator(
-                  color: context.appAccent,
-                  strokeCap: StrokeCap.round,
-                ),
-              ),
+                  child: CircularProgressIndicator(
+                      color: context.appAccent,
+                      strokeCap: StrokeCap.round)),
             ),
             error: (e, _) => SliverFillRemaining(
               child: Center(
-                child: Text('Error: $e',
-                    style: TextStyle(color: context.appExpense)),
-              ),
+                  child: Text('Error: $e',
+                      style: TextStyle(color: context.appExpense))),
             ),
             data: (list) {
-              if (list.isEmpty) {
-                return SliverFillRemaining(
-                  child: _EmptyState(),
-                );
-              }
+              if (list.isEmpty) return SliverFillRemaining(child: _EmptyState());
 
-              final overdue =
-                  list.where((ft) => ft.isOverdue).toList();
+              final overdue = list.where((ft) => ft.isOverdue).toList();
               final dueToday =
                   list.where((ft) => ft.isDueToday && !ft.isOverdue).toList();
-              final upcoming = list
-                  .where((ft) => !ft.isOverdue && !ft.isDueToday)
-                  .toList();
+              final upcoming =
+                  list.where((ft) => !ft.isOverdue && !ft.isDueToday).toList();
 
               return SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -111,15 +101,11 @@ class FutureTransactionsScreen extends ConsumerWidget {
                           color: context.appExpense,
                           count: overdue.length),
                       const Gap(8),
-                      ...overdue.asMap().entries.map(
-                            (e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: FutureTransactionTile(
-                                ft: e.value,
-                                index: e.key,
-                              ),
-                            ),
-                          ),
+                      ...overdue.asMap().entries.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: FutureTransactionTile(
+                                ft: e.value, index: e.key),
+                          )),
                       const Gap(8),
                     ],
                     if (dueToday.isNotEmpty) ...[
@@ -128,15 +114,11 @@ class FutureTransactionsScreen extends ConsumerWidget {
                           color: context.appBorrowed,
                           count: dueToday.length),
                       const Gap(8),
-                      ...dueToday.asMap().entries.map(
-                            (e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: FutureTransactionTile(
-                                ft: e.value,
-                                index: e.key,
-                              ),
-                            ),
-                          ),
+                      ...dueToday.asMap().entries.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: FutureTransactionTile(
+                                ft: e.value, index: e.key),
+                          )),
                       const Gap(8),
                     ],
                     if (upcoming.isNotEmpty) ...[
@@ -145,15 +127,11 @@ class FutureTransactionsScreen extends ConsumerWidget {
                           color: context.appTextSecondary,
                           count: upcoming.length),
                       const Gap(8),
-                      ...upcoming.asMap().entries.map(
-                            (e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: FutureTransactionTile(
-                                ft: e.value,
-                                index: e.key,
-                              ),
-                            ),
-                          ),
+                      ...upcoming.asMap().entries.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: FutureTransactionTile(
+                                ft: e.value, index: e.key),
+                          )),
                     ],
                   ]),
                 ),
@@ -170,7 +148,6 @@ class _SectionHeader extends StatelessWidget {
   final String label;
   final Color color;
   final int count;
-
   const _SectionHeader(
       {required this.label, required this.color, required this.count});
 
@@ -179,42 +156,36 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const Gap(8),
-        Text(
-          label,
-          style: GoogleFonts.dmSans(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
-          ),
-        ),
+        Text(label,
+            style: GoogleFonts.dmSans(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4)),
         const Gap(6),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            '$count',
-            style: GoogleFonts.dmSans(
-                color: color, fontSize: 11, fontWeight: FontWeight.w600),
-          ),
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6)),
+          child: Text('$count',
+              style: GoogleFonts.dmSans(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
         ),
       ],
     );
   }
 }
 
+// ── Tile ────────────────────────────────────────────────────────────────────────
+
 class FutureTransactionTile extends ConsumerWidget {
   final FutureTransaction ft;
   final int index;
-
   const FutureTransactionTile(
       {super.key, required this.ft, required this.index});
 
@@ -240,9 +211,8 @@ class FutureTransactionTile extends ConsumerWidget {
     }
 
     final isIncome = ft.type == TransactionType.income;
-    final amountColor =
-        isIncome ? context.appIncome : context.appExpense;
-    final amountPrefix = isIncome ? '+' : '-';
+    final amountColor = isIncome ? context.appIncome : context.appExpense;
+    final hasAmount = ft.amount > 0;
 
     return GestureDetector(
       onTap: () => _showOptions(context, ref, notifier),
@@ -264,8 +234,7 @@ class FutureTransactionTile extends ConsumerWidget {
           children: [
             Row(
               children: [
-                CategoryIcon(
-                    category: ft.category, size: 42, iconSize: 18),
+                CategoryIcon(category: ft.category, size: 42, iconSize: 18),
                 const Gap(12),
                 Expanded(
                   child: Column(
@@ -274,49 +243,59 @@ class FutureTransactionTile extends ConsumerWidget {
                       Text(
                         ft.title.isNotEmpty ? ft.title : info.label,
                         style: GoogleFonts.dmSans(
-                          color: context.appTextPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
+                            color: context.appTextPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const Gap(2),
-                      Row(
-                        children: [
-                          Icon(Icons.calendar_today_rounded,
-                              size: 11, color: context.appTextMuted),
-                          const Gap(4),
-                          Text(
-                            formatDate(ft.nextDue),
+                      Row(children: [
+                        Icon(Icons.calendar_today_rounded,
+                            size: 11, color: context.appTextMuted),
+                        const Gap(4),
+                        Text(formatDate(ft.nextDue),
                             style: GoogleFonts.dmSans(
-                                color: context.appTextMuted, fontSize: 11),
-                          ),
-                          const Gap(8),
-                          Icon(Icons.repeat_rounded,
-                              size: 11, color: context.appTextMuted),
-                          const Gap(4),
-                          Text(
-                            ft.recurrenceLabel,
+                                color: context.appTextMuted, fontSize: 11)),
+                        const Gap(8),
+                        Icon(Icons.repeat_rounded,
+                            size: 11, color: context.appTextMuted),
+                        const Gap(4),
+                        Text(ft.recurrenceLabel,
                             style: GoogleFonts.dmSans(
-                                color: context.appTextMuted, fontSize: 11),
-                          ),
-                        ],
-                      ),
+                                color: context.appTextMuted, fontSize: 11)),
+                      ]),
                     ],
                   ),
                 ),
+                // Amount or "variable" indicator
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      '$amountPrefix₹${ft.amount.toStringAsFixed(0)}',
-                      style: GoogleFonts.dmSans(
-                        color: amountColor,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    hasAmount
+                        ? Text(
+                            '${isIncome ? '+' : '-'}₹${ft.amount.toStringAsFixed(0)}',
+                            style: GoogleFonts.dmSans(
+                                color: amountColor,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700))
+                        : Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: context.appBorrowed
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: context.appBorrowed
+                                      .withValues(alpha: 0.3)),
+                            ),
+                            child: Text('Variable',
+                                style: GoogleFonts.dmSans(
+                                    color: context.appBorrowed,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600)),
+                          ),
                     const Gap(4),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -327,58 +306,49 @@ class FutureTransactionTile extends ConsumerWidget {
                         border: Border.all(
                             color: statusColor.withValues(alpha: 0.3)),
                       ),
-                      child: Text(
-                        statusLabel,
-                        style: GoogleFonts.dmSans(
-                          color: statusColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      child: Text(statusLabel,
+                          style: GoogleFonts.dmSans(
+                              color: statusColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
               ],
             ),
             if (ft.reminderOffsets.isNotEmpty) ...[
-              const Gap(10),
-              Row(
-                children: [
-                  Icon(Icons.notifications_rounded,
-                      size: 12, color: context.appTextMuted),
-                  const Gap(4),
-                  Text(
-                    _remindersLabel(ft.reminderOffsets),
+              const Gap(8),
+              Row(children: [
+                Icon(Icons.notifications_rounded,
+                    size: 11, color: context.appTextMuted),
+                const Gap(4),
+                Text(_remindersLabel(ft.reminderOffsets),
                     style: GoogleFonts.dmSans(
-                        color: context.appTextMuted, fontSize: 11),
-                  ),
-                ],
-              ),
+                        color: context.appTextMuted, fontSize: 11)),
+              ]),
             ],
-            // Action buttons for overdue/due today
+            // Quick action buttons for overdue/due today
             if (ft.isOverdue || ft.isDueToday) ...[
               const Gap(10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ActionButton(
-                      label: 'Mark Done',
-                      icon: Icons.check_circle_rounded,
-                      color: context.appIncome,
-                      onTap: () => _markDone(context, notifier),
-                    ),
+              Row(children: [
+                Expanded(
+                  child: _ActionButton(
+                    label: 'Mark Done',
+                    icon: Icons.check_circle_rounded,
+                    color: context.appIncome,
+                    onTap: () => _markDone(context, ref, notifier),
                   ),
-                  const Gap(8),
-                  Expanded(
-                    child: _ActionButton(
-                      label: 'Skip',
-                      icon: Icons.skip_next_rounded,
-                      color: context.appTextSecondary,
-                      onTap: () => notifier.skipCycle(ft),
-                    ),
+                ),
+                const Gap(8),
+                Expanded(
+                  child: _ActionButton(
+                    label: 'Skip',
+                    icon: Icons.skip_next_rounded,
+                    color: context.appTextSecondary,
+                    onTap: () => notifier.skipCycle(ft),
                   ),
-                ],
-              ),
+                ),
+              ]),
             ],
           ],
         ),
@@ -386,30 +356,33 @@ class FutureTransactionTile extends ConsumerWidget {
     )
         .animate()
         .fadeIn(duration: 300.ms, delay: (index * 40).ms)
-        .slideX(begin: -0.04, end: 0, duration: 300.ms, delay: (index * 40).ms);
+        .slideX(
+            begin: -0.04, end: 0,
+            duration: 300.ms, delay: (index * 40).ms);
   }
 
   String _remindersLabel(List<int> offsets) {
-    if (offsets.isEmpty) return 'No reminders';
-    final labels = offsets.map((o) {
+    return offsets.map((o) {
       if (o == 0) return 'At due time';
       if (o < 60) return '${o}m before';
       if (o < 1440) return '${o ~/ 60}h before';
       return '${o ~/ 1440}d before';
-    });
-    return labels.join(' · ');
+    }).join(' · ');
   }
 
-  Future<void> _markDone(
-      BuildContext context, FutureTransactionNotifier notifier) async {
-    final picked = await showDatePicker(
+  /// Shows a dialog that:
+  /// - If ft.amount > 0: pre-fills the amount field (user can change it)
+  /// - If ft.amount == 0: shows empty amount field (required to fill)
+  Future<void> _markDone(BuildContext context, WidgetRef ref,
+      FutureTransactionNotifier notifier) async {
+    final result =
+        await showDialog<({double amount, DateTime date})>(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: ft.nextDue.subtract(const Duration(days: 30)),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-      helpText: 'Select transaction date',
+      builder: (ctx) => _MarkDoneDialog(ft: ft),
     );
-    await notifier.markDone(ft, recordDate: picked ?? DateTime.now());
+    if (result == null) return;
+    await notifier.markDone(ft,
+        overrideAmount: result.amount, recordDate: result.date);
   }
 
   void _showOptions(BuildContext context, WidgetRef ref,
@@ -417,65 +390,204 @@ class FutureTransactionTile extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _OptionsSheet(ft: ft, notifier: notifier),
+      builder: (_) => _OptionsSheet(
+          ft: ft, notifier: notifier, ref: ref),
     );
   }
 }
 
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
+// ── Mark Done Dialog ────────────────────────────────────────────────────────────
 
-  const _ActionButton({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
+class _MarkDoneDialog extends StatefulWidget {
+  final FutureTransaction ft;
+  const _MarkDoneDialog({required this.ft});
+
+  @override
+  State<_MarkDoneDialog> createState() => _MarkDoneDialogState();
+}
+
+class _MarkDoneDialogState extends State<_MarkDoneDialog> {
+  late final TextEditingController _amountCtrl;
+  DateTime _date = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill if ft has a set amount, otherwise blank
+    _amountCtrl = TextEditingController(
+      text: widget.ft.amount > 0
+          ? widget.ft.amount.toStringAsFixed(2)
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: widget.ft.nextDue.subtract(const Duration(days: 30)),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked != null && mounted) setState(() => _date = picked);
+  }
+
+  void _submit() {
+    final raw = _amountCtrl.text.trim();
+    if (raw.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Please enter the amount',
+            style: GoogleFonts.dmSans(color: Colors.white)),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    final amount = double.tryParse(raw);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Enter a valid amount',
+            style: GoogleFonts.dmSans(color: Colors.white)),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    Navigator.pop(context, (amount: amount, date: _date));
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+    final isVariableAmount = widget.ft.amount == 0;
+
+    return AlertDialog(
+      backgroundColor: context.appSurfaceElevated,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        'Mark as Done',
+        style: GoogleFonts.dmSans(
+            color: context.appTextPrimary, fontWeight: FontWeight.w700),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 14),
-            const Gap(5),
             Text(
-              label,
+              widget.ft.title,
               style: GoogleFonts.dmSans(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+                  color: context.appTextSecondary, fontSize: 13),
+            ),
+            const Gap(16),
+
+            // Amount field
+            TextField(
+              controller: _amountCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                    RegExp(r'^\d+\.?\d{0,2}'))
+              ],
+              autofocus: isVariableAmount, // auto-focus only if variable
+              style: GoogleFonts.dmSans(
+                color: context.appTextPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: InputDecoration(
+                labelText: isVariableAmount
+                    ? 'Enter amount (₹)'
+                    : 'Amount (₹) — change if needed',
+                labelStyle: GoogleFonts.dmSans(
+                    color: context.appTextSecondary, fontSize: 13),
+                prefixIcon: Icon(Icons.currency_rupee_rounded,
+                    color: context.appTextMuted, size: 18),
+                filled: true,
+                fillColor: context.appSurface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: context.appBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      BorderSide(color: context.appAccent, width: 1.5),
+                ),
+              ),
+            ),
+            const Gap(12),
+
+            // Date picker row
+            GestureDetector(
+              onTap: _pickDate,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: context.appSurface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.appBorder),
+                ),
+                child: Row(children: [
+                  Icon(Icons.calendar_today_rounded,
+                      color: context.appTextMuted, size: 16),
+                  const Gap(8),
+                  Text(
+                    '${_date.day}/${_date.month}/${_date.year}',
+                    style: GoogleFonts.dmSans(
+                        color: context.appTextPrimary, fontSize: 14),
+                  ),
+                  const Spacer(),
+                  Text('Change',
+                      style: GoogleFonts.dmSans(
+                          color: context.appAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500)),
+                ]),
               ),
             ),
           ],
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel',
+              style:
+                  GoogleFonts.dmSans(color: context.appTextSecondary)),
+        ),
+        ElevatedButton(
+          onPressed: _submit,
+          style: ElevatedButton.styleFrom(
+              backgroundColor: context.appIncome),
+          child: Text('Record Transaction',
+              style: GoogleFonts.dmSans(color: Colors.white)),
+        ),
+      ],
     );
   }
 }
 
+// ── Options sheet ────────────────────────────────────────────────────────────────
+
 class _OptionsSheet extends ConsumerWidget {
   final FutureTransaction ft;
   final FutureTransactionNotifier notifier;
+  final WidgetRef ref;
 
-  const _OptionsSheet({required this.ft, required this.notifier});
+  const _OptionsSheet(
+      {required this.ft, required this.notifier, required this.ref});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef widgetRef) {
     final isPaused = ft.status == FutureStatus.paused;
-
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       decoration: BoxDecoration(
@@ -488,23 +600,18 @@ class _OptionsSheet extends ConsumerWidget {
         children: [
           Center(
             child: Container(
-              width: 36,
-              height: 4,
+              width: 36, height: 4,
               decoration: BoxDecoration(
-                color: context.appBorder,
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: context.appBorder,
+                  borderRadius: BorderRadius.circular(2)),
             ),
           ),
           const Gap(16),
-          Text(
-            ft.title.isNotEmpty ? ft.title : 'Scheduled Transaction',
-            style: GoogleFonts.dmSans(
-              color: context.appTextPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Text(ft.title.isNotEmpty ? ft.title : 'Scheduled Transaction',
+              style: GoogleFonts.dmSans(
+                  color: context.appTextPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
           const Gap(16),
           _OptionTile(
             icon: Icons.check_circle_rounded,
@@ -512,25 +619,23 @@ class _OptionsSheet extends ConsumerWidget {
             color: context.appIncome,
             onTap: () async {
               Navigator.pop(context);
-              final picked = await showDatePicker(
+              final result =
+                  await showDialog<({double amount, DateTime date})>(
                 context: context,
-                initialDate: DateTime.now(),
-                firstDate:
-                    ft.nextDue.subtract(const Duration(days: 30)),
-                lastDate: DateTime.now().add(const Duration(days: 1)),
+                builder: (_) => _MarkDoneDialog(ft: ft),
               );
-              await notifier.markDone(ft,
-                  recordDate: picked ?? DateTime.now());
+              if (result != null) {
+                await notifier.markDone(ft,
+                    overrideAmount: result.amount,
+                    recordDate: result.date);
+              }
             },
           ),
           _OptionTile(
             icon: Icons.skip_next_rounded,
             label: 'Skip This Cycle',
             color: context.appBorrowed,
-            onTap: () {
-              Navigator.pop(context);
-              notifier.skipCycle(ft);
-            },
+            onTap: () { Navigator.pop(context); notifier.skipCycle(ft); },
           ),
           _OptionTile(
             icon: isPaused
@@ -540,11 +645,7 @@ class _OptionsSheet extends ConsumerWidget {
             color: context.appAccent,
             onTap: () {
               Navigator.pop(context);
-              if (isPaused) {
-                notifier.resume(ft);
-              } else {
-                notifier.pause(ft);
-              }
+              if (isPaused) { notifier.resume(ft); } else { notifier.pause(ft); }
             },
           ),
           _OptionTile(
@@ -565,10 +666,7 @@ class _OptionsSheet extends ConsumerWidget {
             icon: Icons.delete_outline_rounded,
             label: 'Delete',
             color: context.appExpense,
-            onTap: () {
-              Navigator.pop(context);
-              notifier.delete(ft.id);
-            },
+            onTap: () { Navigator.pop(context); notifier.delete(ft.id); },
           ),
         ],
       ),
@@ -581,36 +679,57 @@ class _OptionTile extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-
-  const _OptionTile({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
+  const _OptionTile(
+      {required this.icon, required this.label, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Container(
-        width: 38,
-        height: 38,
+        width: 38, height: 38,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10)),
         child: Icon(icon, color: color, size: 18),
       ),
-      title: Text(
-        label,
-        style: GoogleFonts.dmSans(
-          color: context.appTextPrimary,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
+      title: Text(label,
+          style: GoogleFonts.dmSans(
+              color: context.appTextPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500)),
       onTap: onTap,
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionButton(
+      {required this.label, required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, color: color, size: 14),
+          const Gap(5),
+          Text(label,
+              style: GoogleFonts.dmSans(
+                  color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        ]),
+      ),
     );
   }
 }
@@ -622,26 +741,18 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.schedule_rounded,
-              size: 60, color: context.appTextMuted),
+          Icon(Icons.schedule_rounded, size: 60, color: context.appTextMuted),
           const Gap(16),
-          Text(
-            'No scheduled transactions',
-            style: GoogleFonts.dmSans(
-              color: context.appTextSecondary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text('No scheduled transactions',
+              style: GoogleFonts.dmSans(
+                  color: context.appTextSecondary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600)),
           const Gap(6),
-          Text(
-            'Tap Schedule to add recurring or future transactions',
-            style: GoogleFonts.dmSans(
-              color: context.appTextMuted,
-              fontSize: 13,
-            ),
-            textAlign: TextAlign.center,
-          ),
+          Text('Tap Schedule to add recurring or future transactions',
+              style: GoogleFonts.dmSans(
+                  color: context.appTextMuted, fontSize: 13),
+              textAlign: TextAlign.center),
         ],
       ),
     );

@@ -1,235 +1,271 @@
-// Imports transactions from a CSV file exported by ExportService.
-// Expected columns (order matters, matches export):
-//   Date, Title, Type, Category, Amount (₹), Note
-//
-// Also handles the extended format which includes an ID column:
-//   ID, Date, Title, Type, Category, Amount (₹), Note
-//
-// Duplicate detection: a transaction is considered a duplicate if
-// the combination of (date string + title + amount) already exists
-// in the provided existing transactions list.
+// Imports both transactions and scheduled (future) transactions.
+// The user picks one or more CSV files — each is auto-detected by its header.
 //
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
-import '../models/transaction_model.dart';
-import '../utils/formatters.dart';
 import 'package:uuid/uuid.dart';
+import '../models/transaction_model.dart';
+import '../models/future_transaction_model.dart';
+import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
 
 class ImportResult {
-  final int imported;
-  final int skipped;   // duplicates
-  final int failed;    // parse errors
+  final int importedTx;
+  final int skippedTx;
+  final int importedFt;
+  final int skippedFt;
+  final int failed;
   final List<String> errors;
   final List<Transaction> transactions;
+  final List<FutureTransaction> futureTransactions;
 
   const ImportResult({
-    required this.imported,
-    required this.skipped,
+    required this.importedTx,
+    required this.skippedTx,
+    required this.importedFt,
+    required this.skippedFt,
     required this.failed,
     required this.errors,
     required this.transactions,
+    required this.futureTransactions,
   });
+
+  bool get hasAnything => importedTx > 0 || importedFt > 0;
 }
 
 class ImportService {
   static const _uuid = Uuid();
 
-  /// Opens a file picker, parses the chosen CSV, and returns an ImportResult.
-  /// Call [DatabaseService.insertTransaction] for each transaction in the result.
-  static Future<ImportResult?> pickAndParse(
-      List<Transaction> existing) async {
-    // Open file picker (CSV only)
+  /// Opens file picker (multi-select), parses every chosen CSV, and merges results.
+  static Future<ImportResult?> pickAndParseAll({
+    required List<Transaction> existingTx,
+    required List<FutureTransaction> existingFt,
+  }) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['csv'],
-      allowMultiple: false,
+      allowMultiple: true,
     );
 
     if (result == null || result.files.isEmpty) return null;
 
-    final path = result.files.single.path;
-    if (path == null) return null;
-
-    final file = File(path);
-    final raw = await file.readAsString();
-    return _parseCsv(raw, existing);
-  }
-
-  /// Parse a raw CSV string. Exposed separately so it can be unit-tested.
-  static ImportResult _parseCsv(
-      String raw, List<Transaction> existing) {
-    final rows = const CsvToListConverter(eol: '\n').convert(raw);
-    if (rows.isEmpty) {
-      return const ImportResult(
-          imported: 0, skipped: 0, failed: 0,
-          errors: ['File is empty'], transactions: []);
-    }
-
-    // Detect header and column layout
-    final header = rows.first.map((c) => c.toString().trim().toLowerCase()).toList();
-    final hasIdCol = header.first == 'id';
-
-    int colId = hasIdCol ? 0 : -1;
-    int colDate = hasIdCol ? 1 : 0;
-    int colTitle = hasIdCol ? 2 : 1;
-    int colType = hasIdCol ? 3 : 2;
-    int colCategory = hasIdCol ? 4 : 3;
-    int colAmount = hasIdCol ? 5 : 4;
-    int colNote = hasIdCol ? 6 : 5;
-
-    // Build duplicate lookup: "dateStr|title|amount"
-    final existingKeys = existing.map((t) {
-      return '${formatDate(t.date)}|${t.title.toLowerCase()}|${t.amount}';
-    }).toSet();
-
-    final imported = <Transaction>[];
+    final allTx  = <Transaction>[];
+    final allFt  = <FutureTransaction>[];
     final errors = <String>[];
-    int skipped = 0;
-    int failed = 0;
+    int skippedTx = 0, skippedFt = 0, failed = 0;
 
-    for (var i = 1; i < rows.length; i++) {
-      final row = rows[i];
-      if (row.isEmpty ||
-          (row.length == 1 && row.first.toString().trim().isEmpty)) {
-        continue; // blank row
-      }
+    // Build duplicate keys
+    final txKeys = existingTx
+        .map((t) =>
+            '${formatDate(t.date)}|${t.title.toLowerCase()}|${t.amount}')
+        .toSet();
+    final ftKeys = existingFt
+        .map((f) =>
+            '${f.title.toLowerCase()}|${f.nextDue.toIso8601String()}')
+        .toSet();
 
-      try {
-        // Safely read cell
-        String cell(int col) =>
-            col < row.length ? row[col].toString().trim() : '';
+    for (final pf in result.files) {
+      if (pf.path == null) continue;
+      final raw = await File(pf.path!).readAsString();
+      final rows = const CsvToListConverter(eol: '\n').convert(raw);
+      if (rows.isEmpty) continue;
 
-        final dateStr = cell(colDate);
-        final title = cell(colTitle);
-        final typeStr = cell(colType).toLowerCase();
-        final categoryStr = cell(colCategory).toLowerCase();
-        final amountStr =
-            cell(colAmount).replaceAll('₹', '').replaceAll(',', '').trim();
-        final note = colNote < row.length ? cell(colNote) : null;
-        final idStr = hasIdCol ? cell(colId) : '';
+      final header = rows.first
+          .map((c) => c.toString().trim().toLowerCase())
+          .toList();
 
-        // Parse amount
-        final amount = double.tryParse(amountStr);
-        if (amount == null) {
-          errors.add('Row ${i + 1}: invalid amount "$amountStr"');
-          failed++;
-          continue;
+      if (_isFutureHeader(header)) {
+        // ── Scheduled transactions ──────────────────────────────────────────
+        for (var i = 1; i < rows.length; i++) {
+          final row = rows[i];
+          if (_isBlankRow(row)) continue;
+          try {
+            String cell(int col) =>
+                col < row.length ? row[col].toString().trim() : '';
+
+            final id         = cell(0);
+            final title      = cell(1);
+            final amountStr  = cell(2).replaceAll('₹', '').replaceAll(',', '');
+            final typeStr    = cell(3).toLowerCase();
+            final catStr     = cell(4).toLowerCase();
+            final recStr     = cell(5).toLowerCase();
+            final daysStr    = cell(6);
+            final nextDueStr = cell(7);
+            final statusStr  = cell(8).toLowerCase();
+            final offsetsStr = cell(9);
+            final note       = cell(10);
+            final createdStr = cell(11);
+
+            final amount = double.tryParse(amountStr) ?? 0;
+            final nextDue = DateTime.tryParse(nextDueStr);
+            if (nextDue == null) {
+              errors.add('Row ${i + 1}: invalid nextDue "$nextDueStr"');
+              failed++;
+              continue;
+            }
+
+            final key = '${title.toLowerCase()}|${nextDue.toIso8601String()}';
+            if (ftKeys.contains(key)) { skippedFt++; continue; }
+
+            final ft = FutureTransaction(
+              id: id.length > 8 ? id : _uuid.v4(),
+              title: title,
+              amount: amount,
+              category: _parseCat(catStr) ?? TransactionCategory.misc,
+              type: typeStr == 'income'
+                  ? TransactionType.income
+                  : TransactionType.expense,
+              note: note.isEmpty ? null : note,
+              recurrence: _parseRecurrence(recStr),
+              recurrenceDays: _parseIntList(daysStr),
+              nextDue: nextDue,
+              status: _parseStatus(statusStr),
+              reminderOffsets: _parseIntList(offsetsStr).isEmpty
+                  ? [0]
+                  : _parseIntList(offsetsStr),
+              createdAt:
+                  DateTime.tryParse(createdStr) ?? DateTime.now(),
+            );
+
+            allFt.add(ft);
+            ftKeys.add(key);
+          } catch (e) {
+            errors.add('Row ${i + 1}: $e');
+            failed++;
+          }
         }
+      } else {
+        // ── Normal transactions ─────────────────────────────────────────────
+        final hasId = header.isNotEmpty && header[0] == 'id';
+        final colId   = hasId ? 0 : -1;
+        final colDate = hasId ? 1 : 0;
+        final colTitle  = hasId ? 2 : 1;
+        final colType   = hasId ? 3 : 2;
+        final colCat    = hasId ? 4 : 3;
+        final colAmt    = hasId ? 5 : 4;
+        final colNote   = hasId ? 6 : 5;
 
-        // Parse date
-        final date = _parseDate(dateStr);
-        if (date == null) {
-          errors.add('Row ${i + 1}: invalid date "$dateStr"');
-          failed++;
-          continue;
+        for (var i = 1; i < rows.length; i++) {
+          final row = rows[i];
+          if (_isBlankRow(row)) continue;
+          try {
+            String cell(int col) =>
+                col < row.length ? row[col].toString().trim() : '';
+
+            final dateStr   = cell(colDate);
+            final title     = cell(colTitle);
+            final typeStr   = cell(colType).toLowerCase();
+            final catStr    = cell(colCat).toLowerCase();
+            final amountStr = cell(colAmt)
+                .replaceAll('₹', '')
+                .replaceAll(',', '');
+            final note    = cell(colNote);
+            final idStr   = colId >= 0 ? cell(colId) : '';
+
+            final amount = double.tryParse(amountStr);
+            if (amount == null) {
+              errors.add('Row ${i + 1}: invalid amount "$amountStr"');
+              failed++;
+              continue;
+            }
+
+            final date = _parseDate(dateStr);
+            if (date == null) {
+              errors.add('Row ${i + 1}: invalid date "$dateStr"');
+              failed++;
+              continue;
+            }
+
+            final type = _parseTxType(typeStr);
+            if (type == null) {
+              errors.add('Row ${i + 1}: unknown type "$typeStr"');
+              failed++;
+              continue;
+            }
+
+            final key =
+                '${formatDate(date)}|${title.toLowerCase()}|$amount';
+            if (txKeys.contains(key)) { skippedTx++; continue; }
+
+            allTx.add(Transaction(
+              id: idStr.length > 8 ? idStr : _uuid.v4(),
+              title: title,
+              amount: amount,
+              category: _parseCat(catStr) ?? TransactionCategory.misc,
+              type: type,
+              date: date,
+              note: note.isEmpty ? null : note,
+            ));
+            txKeys.add(key);
+          } catch (e) {
+            errors.add('Row ${i + 1}: $e');
+            failed++;
+          }
         }
-
-        // Parse type
-        final type = _parseType(typeStr);
-        if (type == null) {
-          errors.add('Row ${i + 1}: unknown type "$typeStr"');
-          failed++;
-          continue;
-        }
-
-        // Parse category
-        final category = _parseCategory(categoryStr);
-        // If category unknown, default to misc
-        final resolvedCategory = category ?? TransactionCategory.misc;
-
-        // Duplicate check
-        final key =
-            '${formatDate(date)}|${title.toLowerCase()}|$amount';
-        if (existingKeys.contains(key)) {
-          skipped++;
-          continue;
-        }
-
-        // Use exported ID if valid, otherwise generate new one
-        final id =
-            (idStr.isNotEmpty && idStr.length > 8) ? idStr : _uuid.v4();
-
-        imported.add(Transaction(
-          id: id,
-          title: title,
-          amount: amount,
-          category: resolvedCategory,
-          type: type,
-          date: date,
-          note: (note != null && note.isNotEmpty) ? note : null,
-        ));
-
-        // Add to local lookup to prevent duplicates within the same import file
-        existingKeys.add(key);
-      } catch (e) {
-        errors.add('Row ${i + 1}: unexpected error — $e');
-        failed++;
       }
     }
 
     return ImportResult(
-      imported: imported.length,
-      skipped: skipped,
+      importedTx: allTx.length,
+      skippedTx: skippedTx,
+      importedFt: allFt.length,
+      skippedFt: skippedFt,
       failed: failed,
       errors: errors,
-      transactions: imported,
+      transactions: allTx,
+      futureTransactions: allFt,
     );
   }
 
-  // ── Parsers ─────────────────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  /// Accepts "d MMM yyyy" (export format) and "dd/MM/yyyy" and "yyyy-MM-dd"
+  static bool _isFutureHeader(List<String> h) =>
+      h.any((c) => c.contains('recurrence') || c.contains('nextdue') || c.contains('next_due'));
+
+  static bool _isBlankRow(List row) =>
+      row.isEmpty ||
+      (row.length == 1 && row.first.toString().trim().isEmpty);
+
   static DateTime? _parseDate(String s) {
     if (s.isEmpty) return null;
-
-    // "15 Mar 2024"
     final monthNames = {
       'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
       'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
     };
-
     final parts = s.trim().split(RegExp(r'[\s/\-]'));
     if (parts.length == 3) {
-      // Try "d MMM yyyy"
-      final monthNum = monthNames[parts[1].toLowerCase().substring(0, 3)];
+      final monthNum =
+          monthNames[parts[1].toLowerCase().substring(0, 3)];
       if (monthNum != null) {
-        final day = int.tryParse(parts[0]);
+        final day  = int.tryParse(parts[0]);
         final year = int.tryParse(parts[2]);
-        if (day != null && year != null) {
-          return DateTime(year, monthNum, day);
-        }
+        if (day != null && year != null) return DateTime(year, monthNum, day);
       }
-      // Try "dd/MM/yyyy" or "yyyy-MM-dd"
       final a = int.tryParse(parts[0]);
       final b = int.tryParse(parts[1]);
       final c = int.tryParse(parts[2]);
       if (a != null && b != null && c != null) {
-        if (a > 31) return DateTime(a, b, c); // yyyy-MM-dd
-        return DateTime(c, b, a); // dd/MM/yyyy
+        if (a > 31) return DateTime(a, b, c);
+        return DateTime(c, b, a);
       }
     }
-    return null;
+    return DateTime.tryParse(s);
   }
 
-  static TransactionType? _parseType(String s) {
+  static TransactionType? _parseTxType(String s) {
     switch (s) {
-      case 'expense':
-        return TransactionType.expense;
-      case 'income':
-        return TransactionType.income;
+      case 'expense':  return TransactionType.expense;
+      case 'income':   return TransactionType.income;
       case 'borrowed':
-      case 'borrow':
-        return TransactionType.borrowed;
+      case 'borrow':   return TransactionType.borrowed;
       case 'lend':
-      case 'lent':
-        return TransactionType.lend;
-      default:
-        return null;
+      case 'lent':     return TransactionType.lend;
+      default:         return null;
     }
   }
 
-  static TransactionCategory? _parseCategory(String s) {
+  static TransactionCategory? _parseCat(String s) {
     const map = {
       'food': TransactionCategory.food,
       'travel': TransactionCategory.travel,
@@ -249,5 +285,32 @@ class ImportService {
       'lend': TransactionCategory.lend,
     };
     return map[s.toLowerCase()];
+  }
+
+  static RecurrenceType _parseRecurrence(String s) {
+    switch (s) {
+      case 'daily':   return RecurrenceType.daily;
+      case 'weekly':  return RecurrenceType.weekly;
+      case 'monthly': return RecurrenceType.monthly;
+      default:        return RecurrenceType.once;
+    }
+  }
+
+  static FutureStatus _parseStatus(String s) {
+    switch (s) {
+      case 'paused':         return FutureStatus.paused;
+      case 'skipped':        return FutureStatus.skipped;
+      case 'completedcycle': return FutureStatus.completedCycle;
+      default:               return FutureStatus.pending;
+    }
+  }
+
+  static List<int> _parseIntList(String s) {
+    if (s.isEmpty) return [];
+    return s
+        .split(',')
+        .map((e) => int.tryParse(e.trim()))
+        .whereType<int>()
+        .toList();
   }
 }

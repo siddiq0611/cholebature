@@ -10,27 +10,19 @@ import '../theme/app_theme.dart';
 
 class AddTransactionSheet extends ConsumerStatefulWidget {
   final Transaction? existing;
-
-  /// When set, the sheet opens with this type pre-selected.
-  /// Used by BorrowLendScreen to default to TransactionType.borrowed.
   final TransactionType? defaultType;
 
-  const AddTransactionSheet({
-    super.key,
-    this.existing,
-    this.defaultType,
-  });
+  const AddTransactionSheet({super.key, this.existing, this.defaultType});
 
   @override
   ConsumerState<AddTransactionSheet> createState() =>
       _AddTransactionSheetState();
 }
 
-class _AddTransactionSheetState
-    extends ConsumerState<AddTransactionSheet> {
-  final _titleCtrl = TextEditingController();
+class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
+  final _titleCtrl  = TextEditingController();
   final _amountCtrl = TextEditingController();
-  final _noteCtrl = TextEditingController();
+  final _noteCtrl   = TextEditingController();
 
   late TransactionType _type;
   late TransactionCategory _category;
@@ -45,15 +37,14 @@ class _AddTransactionSheetState
     super.initState();
     if (_isEditing) {
       final tx = widget.existing!;
-      _titleCtrl.text = tx.title;
+      _titleCtrl.text  = tx.title;
       _amountCtrl.text = tx.amount.toStringAsFixed(2);
-      _noteCtrl.text = tx.note ?? '';
-      _type = tx.type;
+      _noteCtrl.text   = tx.note ?? '';
+      _type     = tx.type;
       _category = tx.category;
-      _date = tx.date;
+      _date     = tx.date;
     } else {
-      // Use defaultType if provided, otherwise expense
-      _type = widget.defaultType ?? TransactionType.expense;
+      _type     = widget.defaultType ?? TransactionType.expense;
       _category = _defaultCategoryFor(_type);
     }
   }
@@ -68,14 +59,10 @@ class _AddTransactionSheetState
 
   TransactionCategory _defaultCategoryFor(TransactionType type) {
     switch (type) {
-      case TransactionType.expense:
-        return TransactionCategory.food;
-      case TransactionType.income:
-        return TransactionCategory.salary;
-      case TransactionType.borrowed:
-        return TransactionCategory.borrowed;
-      case TransactionType.lend:
-        return TransactionCategory.lend;
+      case TransactionType.expense:  return TransactionCategory.food;
+      case TransactionType.income:   return TransactionCategory.salary;
+      case TransactionType.borrowed: return TransactionCategory.borrowed;
+      case TransactionType.lend:     return TransactionCategory.lend;
     }
   }
 
@@ -91,10 +78,10 @@ class _AddTransactionSheetState
 
   Future<void> _save() async {
     final rawTitle = _titleCtrl.text.trim();
-    final raw = _amountCtrl.text.trim();
+    final raw      = _amountCtrl.text.trim();
 
     if (rawTitle.isEmpty) { _showError('Please enter a title'); return; }
-    if (raw.isEmpty) { _showError('Please enter an amount'); return; }
+    if (raw.isEmpty)      { _showError('Please enter an amount'); return; }
     final amount = double.tryParse(raw);
     if (amount == null || amount <= 0) {
       _showError('Enter a valid amount');
@@ -109,31 +96,40 @@ class _AddTransactionSheetState
     }
 
     setState(() => _saving = true);
-    final tx = Transaction(
-      id: _isEditing ? widget.existing!.id : _uuid.v4(),
-      title: rawTitle,
-      amount: amount,
-      category: _category,
-      type: _type,
-      date: _date,
-      note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-    );
+    try {
+      final tx = Transaction(
+        id:       _isEditing ? widget.existing!.id : _uuid.v4(),
+        title:    rawTitle,
+        amount:   amount,
+        category: _category,
+        type:     _type,
+        date:     _date,
+        note:     _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+      );
 
-    final notifier = ref.read(transactionListProvider.notifier);
-    if (_isEditing) {
-      await notifier.update(tx);
-    } else {
-      await notifier.add(tx);
+      final notifier = ref.read(transactionListProvider.notifier);
+      if (_isEditing) {
+        await notifier.update(tx);
+      } else {
+        await notifier.add(tx);
+      }
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        _showError('Failed to save: $e');
+      }
     }
-
-    if (mounted) Navigator.pop(context);
   }
 
+  // ── Error shown INSIDE the modal sheet ────────────────────────────────────
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg, style: GoogleFonts.dmSans(color: Colors.white)),
       backgroundColor: context.appExpense,
       behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
     ));
   }
 
@@ -149,8 +145,8 @@ class _AddTransactionSheetState
                     color: context.appTextPrimary,
                     fontWeight: FontWeight.w700)),
             content: Text(message,
-                style: GoogleFonts.dmSans(
-                    color: context.appTextSecondary)),
+                style:
+                    GoogleFonts.dmSans(color: context.appTextSecondary)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -189,8 +185,7 @@ class _AddTransactionSheetState
             padding: const EdgeInsets.only(top: 12, bottom: 4),
             child: Center(
               child: Container(
-                width: 36,
-                height: 4,
+                width: 36, height: 4,
                 decoration: BoxDecoration(
                   color: context.appBorder,
                   borderRadius: BorderRadius.circular(2),
@@ -242,8 +237,8 @@ class _AddTransactionSheetState
 
                   TextField(
                     controller: _amountCtrl,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(
                           RegExp(r'^\d+\.?\d{0,2}'))
@@ -286,7 +281,8 @@ class _AddTransactionSheetState
                           Text(
                             '${_date.day}/${_date.month}/${_date.year}',
                             style: GoogleFonts.dmSans(
-                                color: context.appTextPrimary, fontSize: 14),
+                                color: context.appTextPrimary,
+                                fontSize: 14),
                           ),
                           const Spacer(),
                           Icon(Icons.chevron_right_rounded,
@@ -318,10 +314,10 @@ class _AddTransactionSheetState
                           backgroundColor: context.appAccent),
                       child: _saving
                           ? const SizedBox(
-                              width: 20,
-                              height: 20,
+                              width: 20, height: 20,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
+                                  strokeWidth: 2,
+                                  color: Colors.white),
                             )
                           : Text(_isEditing
                               ? 'Update Transaction'
@@ -338,7 +334,7 @@ class _AddTransactionSheetState
   }
 }
 
-// ── Type Toggle: all 4 types ───────────────────────────────────────────────────
+// ── Type Toggle ────────────────────────────────────────────────────────────────
 class _TypeToggle extends StatelessWidget {
   final TransactionType selected;
   final ValueChanged<TransactionType> onChanged;
@@ -445,7 +441,7 @@ class _CategoryPicker extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: _cats.map((c) {
-            final info = categoryInfoMap[c]!;
+            final info  = categoryInfoMap[c]!;
             final isSel = selected == c;
             return GestureDetector(
               onTap: () => onChanged(c),

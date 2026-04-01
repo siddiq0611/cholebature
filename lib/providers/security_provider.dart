@@ -18,7 +18,11 @@ class SecuritySettingsNotifier extends StateNotifier<SecuritySettings> {
   }
 
   Future<void> enable(LockType type, String credential) async {
-    await SecurityService.setCredential(credential);
+    // Pass isPin=true when the type is PIN so the digit count gets stored
+    await SecurityService.setCredential(
+      credential,
+      isPin: type == LockType.pin,
+    );
     final updated = state.copyWith(enabled: true, lockType: type);
     await SecurityService.saveSettings(updated);
     if (mounted) state = updated;

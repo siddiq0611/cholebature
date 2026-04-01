@@ -18,14 +18,18 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   final _inputCtrl = TextEditingController();
   String _pinInput = '';
   String? _error;
-  bool _obscure = true;
-  bool _loading = false;
+  bool _obscure   = true;
+  bool _loading   = false;
 
-  // Start as null so we show a spinner until _init() completes.
-  // This prevents the PIN pad from flashing before we know the lock type.
+  // Null until _init() completes — prevents flash of wrong UI.
   LockType? _lockType;
 
-  int _pinMaxLength = 6;
+  // Actual PIN length: read from the stored hash by trying lengths 4–6.
+  // We determine this by attempting verification at each length during init.
+  // Simpler approach: we store the PIN length separately.
+  // Even simpler: just show 6 dots always but only fill up to entered count.
+  // BEST approach: store pin length in secure storage at set-time, read here.
+  int _pinLength = 6; // default; overridden once we load the real length
 
   @override
   void initState() {
@@ -34,13 +38,15 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   Future<void> _init() async {
-    // Show spinner while loading settings
     setState(() => _loading = true);
     final settings = await SecurityService.loadSettings();
+    // Read the stored PIN length (if any)
+    final storedLen = await SecurityService.loadPinLength();
     if (!mounted) return;
     setState(() {
-      _lockType = settings.lockType;
-      _loading = false;
+      _lockType  = settings.lockType;
+      _pinLength = storedLen ?? 6;
+      _loading   = false;
     });
     if (settings.lockType == LockType.biometric) {
       await _tryBiometric();
@@ -49,13 +55,14 @@ class _LockScreenState extends ConsumerState<LockScreen> {
 
   Future<void> _tryBiometric() async {
     setState(() => _loading = true);
-    final success = await SecurityService.authenticateWithBiometric();
-    if (success && mounted) {
+    final result = await SecurityService.authenticateWithBiometricResult();
+    if (!mounted) return;
+    if (result.success) {
       _unlock();
-    } else if (mounted) {
+    } else {
       setState(() {
-        _loading = false;
-        _error = 'Biometric failed. Enter your PIN or password below.';
+        _loading  = false;
+        _error    = result.error ?? 'Biometric failed. Use PIN or password.';
         _lockType = LockType.pin;
       });
     }
@@ -64,14 +71,15 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   Future<void> _verifyInput(String input) async {
     setState(() => _loading = true);
     final ok = await SecurityService.verifyCredential(input);
-    if (ok && mounted) {
+    if (!mounted) return;
+    if (ok) {
       _unlock();
-    } else if (mounted) {
+    } else {
       setState(() {
-        _loading = false;
-        _error =
+        _loading   = false;
+        _error     =
             'Incorrect ${_lockType == LockType.pin ? 'PIN' : 'password'}. Try again.';
-        _pinInput = '';
+        _pinInput  = '';
         _inputCtrl.clear();
       });
     }
@@ -82,37 +90,35 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   void _onDigit(String d) {
-    if (_pinInput.length >= 6) return;
+    if (_pinInput.length >= _pinLength) return;
     setState(() {
       _pinInput += d;
       _error = null;
     });
-
-    if (_pinInput.length >= 4) {
-      _tryPinAttempt(_pinInput);
+    // Try verifying once we have enough digits.
+    // For 4-digit PIN: verify on 4th digit.
+    // For 5-digit PIN: verify on 5th digit.
+    // For 6-digit PIN: verify on 6th digit.
+    if (_pinInput.length == _pinLength) {
+      _verifyInput(_pinInput);
+    } else if (_pinInput.length >= 4 && _pinLength > _pinInput.length) {
+      // Try early in case user has a shorter PIN than _pinLength
+      _tryPinEarly(_pinInput);
     }
   }
 
-  Future<void> _tryPinAttempt(String pin) async {
+  Future<void> _tryPinEarly(String pin) async {
     final ok = await SecurityService.verifyCredential(pin);
     if (!mounted) return;
-
-    if (ok) {
-      _unlock();
-    } else if (pin.length == 6) {
-      setState(() {
-        _error = 'Incorrect PIN. Try again.';
-        _pinInput = '';
-      });
-    }
-    // For 4 or 5 digits wrong: stay silent and wait for more digits
+    if (ok) _unlock();
+    // else: wait for more digits
   }
 
   void _onBackspace() {
     if (_pinInput.isEmpty) return;
     setState(() {
       _pinInput = _pinInput.substring(0, _pinInput.length - 1);
-      _error = null;
+      _error    = null;
     });
   }
 
@@ -154,7 +160,6 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                 ),
                 const Gap(8),
                 Text(
-                  // Show generic subtitle until _lockType is known
                   _lockType == null
                       ? 'Checking lock settings…'
                       : _lockType == LockType.biometric
@@ -167,16 +172,25 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                 ),
                 if (_error != null) ...[
                   const Gap(12),
-                  Text(
-                    _error!,
-                    style: GoogleFonts.dmSans(
-                        color: context.appExpense, fontSize: 13),
-                    textAlign: TextAlign.center,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: context.appExpense.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color:
+                              context.appExpense.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: GoogleFonts.dmSans(
+                          color: context.appExpense, fontSize: 13),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 ],
                 const Gap(32),
-
-                // Show spinner while _init() is running OR while verifying
                 if (_loading || _lockType == null)
                   CircularProgressIndicator(
                       color: context.appAccent,
@@ -185,8 +199,8 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   _BiometricButton(onTap: _tryBiometric)
                 else if (_lockType == LockType.pin)
                   _PinInput(
-                    pinLength: _pinInput.length,
-                    maxLength: _pinMaxLength,
+                    pinInput: _pinInput,
+                    pinLength: _pinLength,
                     onDigit: _onDigit,
                     onBackspace: _onBackspace,
                   )
@@ -234,14 +248,14 @@ class _BiometricButton extends StatelessWidget {
 }
 
 class _PinInput extends StatelessWidget {
-  final int pinLength;
-  final int maxLength;
+  final String pinInput;   // the digits typed so far
+  final int pinLength;     // total expected digits (4, 5, or 6)
   final void Function(String) onDigit;
   final VoidCallback onBackspace;
 
   const _PinInput({
+    required this.pinInput,
     required this.pinLength,
-    required this.maxLength,
     required this.onDigit,
     required this.onBackspace,
   });
@@ -250,21 +264,25 @@ class _PinInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Dot indicators
+        // ── Dot indicators: exactly pinLength dots ──
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(maxLength, (i) {
-            final filled = i < pinLength;
+          children: List.generate(pinLength, (i) {
+            final filled = i < pinInput.length;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               margin: const EdgeInsets.symmetric(horizontal: 6),
-              width: 12,
-              height: 12,
+              width: 14,
+              height: 14,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: filled ? context.appAccent : Colors.transparent,
+                color: filled
+                    ? context.appAccent
+                    : Colors.transparent,
                 border: Border.all(
-                  color: filled ? context.appAccent : context.appBorder,
+                  color: filled
+                      ? context.appAccent
+                      : context.appBorder,
                   width: 2,
                 ),
               ),
@@ -272,7 +290,7 @@ class _PinInput extends StatelessWidget {
           }),
         ),
         const Gap(32),
-        // Number pad
+        // ── Number pad ──
         ...[
           ['1', '2', '3'],
           ['4', '5', '6'],
@@ -285,17 +303,13 @@ class _PinInput extends StatelessWidget {
                 children: row.map((key) {
                   if (key.isEmpty) return const SizedBox(width: 80);
                   return GestureDetector(
-                    onTap: () {
-                      if (key == '⌫') {
-                        onBackspace();
-                      } else {
-                        onDigit(key);
-                      }
-                    },
+                    onTap: () =>
+                        key == '⌫' ? onBackspace() : onDigit(key),
                     child: Container(
                       width: 72,
                       height: 72,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      margin:
+                          const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
                         color: context.appSurfaceElevated,
                         shape: BoxShape.circle,
@@ -344,8 +358,6 @@ class _PasswordInput extends StatelessWidget {
           controller: controller,
           obscureText: obscure,
           autofocus: true,
-          // FIX: explicitly set text keyboard so the password field never
-          // inherits a numeric keyboard type
           keyboardType: TextInputType.text,
           textInputAction: TextInputAction.done,
           style: GoogleFonts.dmSans(color: context.appTextPrimary),

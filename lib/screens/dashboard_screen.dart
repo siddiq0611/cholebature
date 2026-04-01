@@ -1,4 +1,3 @@
-import 'package:chole_bature/widgets/footer_credit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -92,8 +91,6 @@ class DashboardScreen extends ConsumerWidget {
                 const Gap(16),
                 _CategoryBreakdownList(
                     data: catData, total: summary.expense),
-                const Gap(64),
-                const FooterCredit(),
               ]),
             ),
           ),

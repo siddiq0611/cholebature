@@ -25,41 +25,47 @@ class SummaryCards extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _BigCard(
-                title: 'Net Savings',
-                subtitle: income > 0
-                    ? '${((savings / income) * 100).clamp(0.0, 100.0).toStringAsFixed(0)}% of income saved'
-                    : 'No income recorded',
-                amount: savings,
-                progressValue: income > 0
-                    ? (savings / income).clamp(0.0, 1.0)
-                    : 0.0,
-                cardColor:
-                    savings >= 0 ? context.appIncome : context.appExpense,
-                icon: Icons.savings_rounded,
+        // ── Big cards row ──
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _BigCard(
+                  title: 'Net Savings',
+                  subtitle: income > 0
+                      ? '${((savings / income) * 100).clamp(0.0, 100.0).toStringAsFixed(0)}% of income saved'
+                      : 'No income recorded',
+                  amount: savings,
+                  progressValue:
+                      income > 0 ? (savings / income).clamp(0.0, 1.0) : 0.0,
+                  cardColor:
+                      savings >= 0 ? context.appIncome : context.appExpense,
+                  icon: Icons.savings_rounded,
+                ),
               ),
-            ),
-            const Gap(10),
-            Expanded(
-              child: _BigCard(
-                title: 'Net Worth',
-                subtitle: borrowed > 0
-                    ? '−${formatCompact(borrowed)} borrowed'
-                    : 'No liabilities',
-                amount: savings - borrowed,
-                progressValue: income > 0
-                    ? ((savings - borrowed) / income).clamp(0.0, 1.0)
-                    : 0.0,
-                cardColor: context.appAccent,
-                icon: Icons.account_balance_rounded,
+              const Gap(10),
+              Expanded(
+                child: _BigCard(
+                  title: 'Net Worth',
+                  subtitle: borrowed > 0
+                      ? '−${formatCompact(borrowed)} borrowed'
+                      : 'No liabilities',
+                  amount: savings - borrowed,
+                  progressValue: income > 0
+                      ? ((savings - borrowed) / income).clamp(0.0, 1.0)
+                      : 0.0,
+                  cardColor: context.appAccent,
+                  icon: Icons.account_balance_rounded,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+
         const Gap(12),
+
+        // ── Mini cards row ──
         Row(
           children: [
             Expanded(
@@ -81,6 +87,7 @@ class SummaryCards extends StatelessWidget {
             ),
           ],
         ),
+
         if (borrowed > 0 || lent > 0) ...[
           const Gap(10),
           Row(
@@ -143,10 +150,7 @@ class _BigCard extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: cardColor.withValues(alpha: 0.28),
-          width: 1,
-        ),
+        border: Border.all(color: cardColor.withValues(alpha: 0.28)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,13 +181,18 @@ class _BigCard extends StatelessWidget {
             ],
           ),
           const Gap(10),
-          Text(
-            formatCurrency(amount),
-            style: GoogleFonts.dmSans(
-              color: cardColor,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.8,
+          // FittedBox prevents overflow when the number is large
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              formatCurrency(amount),
+              style: GoogleFonts.dmSans(
+                color: cardColor,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.8,
+              ),
             ),
           ),
           const Gap(10),
@@ -220,40 +229,35 @@ class _MiniCard extends StatelessWidget {
   final double amount;
   final Color color;
   final IconData icon;
-  final bool fullWidth;
 
   const _MiniCard({
     required this.label,
     required this.amount,
     required this.color,
     required this.icon,
-    this.fullWidth = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: fullWidth ? double.infinity : null,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(
-            alpha: context.isDark ? 0.08 : 0.06),
+        color: color.withValues(alpha: context.isDark ? 0.08 : 0.06),
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: color.withValues(alpha: 0.22), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(9),
             ),
-            child: Icon(icon, color: color, size: 18),
+            child: Icon(icon, color: color, size: 16),
           ),
-          const Gap(10),
+          const Gap(8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,20 +266,24 @@ class _MiniCard extends StatelessWidget {
                   label,
                   style: GoogleFonts.dmSans(
                     color: context.appTextSecondary,
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 const Gap(2),
-                Text(
-                  formatCompact(amount),
-                  style: GoogleFonts.dmSans(
-                    color: color,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
+                // FittedBox shrinks the text if it would overflow on small screens
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    formatCompact(amount),
+                    style: GoogleFonts.dmSans(
+                      color: color,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

@@ -3,11 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 
 // ── Replace with your actual Google Form values ────────────────────────────────
+// The formResponse endpoint for background submission
 const _googleFormBase =
     'https://docs.google.com/forms/d/e/1FAIpQLSfN3hgpUR66QS0emkH0uCMA14ul4j93w3FXoIy74W88V-ndDw/formResponse';
+
+// The viewform URL for opening in browser as fallback
+const _googleFormViewUrl =
+    'https://docs.google.com/forms/d/e/1FAIpQLSfN3hgpUR66QS0emkH0uCMA14ul4j93w3FXoIy74W88V-ndDw/viewform';
+
+const _googleFormFallbackUrl =
+    'https://docs.google.com/forms/d/e/1FAIpQLSchCr-GVCrI_d7ytec6OmniwvHWyXuj8chfM97Chem4EOgjrQ/viewform?usp=dialog';
+
 const _entryRating  = 'entry.1993910943';
 const _entryMessage = 'entry.2031031347';
 
@@ -22,9 +32,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   int _stars = 0;
   final _msgCtrl = TextEditingController();
 
-  // Three distinct states for the button
   _SubmitState _submitState = _SubmitState.idle;
-  String? _errorMessage;
+  _ErrorType? _errorType;
+  String? _errorDetail;
 
   bool _sent = false;
 
@@ -35,15 +45,18 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   }
 
   Future<void> _submit() async {
-    // Validate
     if (_stars == 0) {
-      setState(() => _errorMessage = 'Please select a star rating before submitting.');
+      setState(() {
+        _errorType   = _ErrorType.validation;
+        _errorDetail = 'Please select a star rating before submitting.';
+      });
       return;
     }
 
     setState(() {
-      _submitState  = _SubmitState.sending;
-      _errorMessage = null;
+      _submitState = _SubmitState.sending;
+      _errorType   = null;
+      _errorDetail = null;
     });
 
     final ratingText = '$_stars star${_stars > 1 ? 's' : ''}';
@@ -55,42 +68,56 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     });
 
     try {
-      // POST with a generous timeout so we wait for the real response
       final response = await http
           .post(uri)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 12));
 
-      // Google Forms returns 200 on success or a redirect (303).
-      // statusCode < 400 means it was accepted.
       if (response.statusCode < 400) {
         if (mounted) setState(() { _submitState = _SubmitState.idle; _sent = true; });
       } else {
         if (mounted) {
           setState(() {
-            _submitState  = _SubmitState.idle;
-            _errorMessage =
-                'Submission failed (HTTP ${response.statusCode}). Please try again.';
+            _submitState = _SubmitState.idle;
+            _errorType   = _ErrorType.server;
+            _errorDetail = 'HTTP ${response.statusCode}';
           });
         }
       }
     } on Exception catch (e) {
-      // Network error, timeout, etc.
-      if (mounted) {
-        setState(() {
-          _submitState  = _SubmitState.idle;
-          _errorMessage =
-              'Could not reach the server. Check your connection and try again.\n\n'
-              '(${e.toString().split(':').first})';
-        });
-      }
+      if (!mounted) return;
+
+      final msg2 = e.toString().toLowerCase();
+      final isNetworkBlock =
+          msg2.contains('socketexception') ||
+          msg2.contains('clientexception') ||
+          msg2.contains('handshake') ||
+          msg2.contains('connection refused') ||
+          msg2.contains('network is unreachable') ||
+          msg2.contains('failed host lookup');
+
+      setState(() {
+        _submitState = _SubmitState.idle;
+        _errorType   = isNetworkBlock
+            ? _ErrorType.networkBlock
+            : _ErrorType.unknown;
+        _errorDetail = e.toString().split(':').first.trim();
+      });
+    }
+  }
+
+  Future<void> _openFormInBrowser() async {
+    final uri = Uri.parse(_googleFormFallbackUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
   void _reset() => setState(() {
-        _sent         = false;
-        _stars        = 0;
-        _submitState  = _SubmitState.idle;
-        _errorMessage = null;
+        _sent        = false;
+        _stars       = 0;
+        _submitState = _SubmitState.idle;
+        _errorType   = null;
+        _errorDetail = null;
         _msgCtrl.clear();
       });
 
@@ -116,12 +143,18 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       body: _sent
           ? _ThankYouView(onReset: _reset)
           : _FormView(
-              stars:        _stars,
-              submitState:  _submitState,
-              msgCtrl:      _msgCtrl,
-              errorMessage: _errorMessage,
-              onStarTap:    (s) => setState(() { _stars = s; _errorMessage = null; }),
-              onSubmit:     _submit,
+              stars:       _stars,
+              submitState: _submitState,
+              msgCtrl:     _msgCtrl,
+              errorType:   _errorType,
+              errorDetail: _errorDetail,
+              onStarTap:   (s) => setState(() {
+                _stars     = s;
+                _errorType = null;
+                _errorDetail = null;
+              }),
+              onSubmit:           _submit,
+              onOpenFormInBrowser: _openFormInBrowser,
             ),
     );
   }
@@ -129,23 +162,34 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
 enum _SubmitState { idle, sending }
 
+enum _ErrorType {
+  validation,   // user forgot to pick stars
+  networkBlock, // SocketException / device blocking HTTP
+  server,       // 4xx / 5xx
+  unknown,      // anything else
+}
+
 // ── Form view ──────────────────────────────────────────────────────────────────
 
 class _FormView extends StatelessWidget {
   final int stars;
   final _SubmitState submitState;
   final TextEditingController msgCtrl;
-  final String? errorMessage;
+  final _ErrorType? errorType;
+  final String? errorDetail;
   final void Function(int) onStarTap;
   final VoidCallback onSubmit;
+  final VoidCallback onOpenFormInBrowser;
 
   const _FormView({
     required this.stars,
     required this.submitState,
     required this.msgCtrl,
-    required this.errorMessage,
+    required this.errorType,
+    required this.errorDetail,
     required this.onStarTap,
     required this.onSubmit,
+    required this.onOpenFormInBrowser,
   });
 
   @override
@@ -157,7 +201,7 @@ class _FormView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Hero card
+          // ── Hero card ───────────────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
@@ -196,13 +240,13 @@ class _FormView extends StatelessWidget {
           ),
           const Gap(28),
 
+          // ── Star rating ─────────────────────────────────────────────────
           Text('How would you rate your experience?',
               style: GoogleFonts.dmSans(
                   color: context.appTextPrimary,
                   fontSize: 15, fontWeight: FontWeight.w600)),
           const Gap(16),
 
-          // Star row
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(5, (i) {
@@ -247,6 +291,7 @@ class _FormView extends StatelessWidget {
           ],
           const Gap(28),
 
+          // ── Message ─────────────────────────────────────────────────────
           Text('Leave a message (optional)',
               style: GoogleFonts.dmSans(
                   color: context.appTextPrimary,
@@ -268,35 +313,15 @@ class _FormView extends StatelessWidget {
           ),
           const Gap(20),
 
-          // ── Inline error box (visible, never hidden behind anything) ──────
-          if (errorMessage != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.appExpense.withValues(alpha: 0.09),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: context.appExpense.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.error_outline_rounded,
-                      color: context.appExpense, size: 18),
-                  const Gap(8),
-                  Expanded(
-                    child: Text(
-                      errorMessage!,
-                      style: GoogleFonts.dmSans(
-                          color: context.appExpense, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
+          // ── Error box ────────────────────────────────────────────────────
+          if (errorType != null)
+            _ErrorBox(
+              errorType:          errorType!,
+              errorDetail:        errorDetail,
+              onOpenFormInBrowser: onOpenFormInBrowser,
             ),
 
-          // ── Submit button ─────────────────────────────────────────────────
+          // ── Submit button ────────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -346,12 +371,137 @@ class _FormView extends StatelessWidget {
           const Gap(12),
           Center(
             child: Text(
-              'Your feedback is submitted directly in the background.',
+              'Feedback is submitted directly in the background.',
               style: GoogleFonts.dmSans(
                   color: context.appTextMuted, fontSize: 11),
               textAlign: TextAlign.center,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Error box ──────────────────────────────────────────────────────────────────
+
+class _ErrorBox extends StatelessWidget {
+  final _ErrorType errorType;
+  final String? errorDetail;
+  final VoidCallback onOpenFormInBrowser;
+
+  const _ErrorBox({
+    required this.errorType,
+    required this.errorDetail,
+    required this.onOpenFormInBrowser,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Decide message + whether to show the "Open Form" button
+    String title;
+    String body;
+    bool showOpenButton;
+
+    switch (errorType) {
+      case _ErrorType.validation:
+        title          = 'Missing rating';
+        body           = 'Please select a star rating before submitting.';
+        showOpenButton = false;
+        break;
+
+      case _ErrorType.networkBlock:
+        title          = 'Connection blocked';
+        body           =
+            'Your device or network is preventing the app from reaching ';
+            'Googles servers. This is common on some Android/iOS setups.\n'
+            'You can open the form directly in your browser instead — '
+            'your stars and message will not be pre-filled there.';
+        showOpenButton = true;
+        break;
+
+      case _ErrorType.server:
+        title          = 'Submission failed';
+        body           =
+            'Google returned an error (${errorDetail ?? 'unknown'}). '
+            'Please try again or open the form in your browser.';
+        showOpenButton = true;
+        break;
+
+      case _ErrorType.unknown:
+        title          = 'Something went wrong';
+        body           =
+            'An unexpected error occurred. Please check your internet '
+            'connection and try again, or open the form in your browser.';
+        showOpenButton = true;
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.appExpense.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: context.appExpense.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.error_outline_rounded,
+                  color: context.appExpense, size: 18),
+              const Gap(8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.dmSans(
+                    color: context.appExpense,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Gap(8),
+
+          // Body text
+          Text(
+            body,
+            style: GoogleFonts.dmSans(
+              color: context.appTextSecondary,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+
+          // "Open Form in Browser" button
+          if (showOpenButton) ...[
+            const Gap(12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onOpenFormInBrowser,
+                icon: const Icon(Icons.open_in_browser_rounded, size: 16),
+                label: Text('Open Form in Browser',
+                    style: GoogleFonts.dmSans(
+                        fontWeight: FontWeight.w600, fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.appAccent,
+                  side: BorderSide(
+                      color: context.appAccent.withValues(alpha: 0.6)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

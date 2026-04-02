@@ -1,7 +1,7 @@
 name: chole_bature
-description: A production-ready personal expense tracker app.
+description: A personal expense tracker app.
 publish_to: 'none'
-version: 2.0.0+1
+version: 3.4.18
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -12,7 +12,6 @@ dependencies:
 
   # State Management
   flutter_riverpod: ^2.4.9
-
 
   # Local Database
   sqflite: ^2.3.0
@@ -62,3 +61,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/
+  
+url_launcher: ^6.2.6

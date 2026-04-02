@@ -23,9 +23,12 @@ class SummaryCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Net worth = savings - what you owe + what others owe you
+    // Borrowed = liability (you owe), Lent = asset (owed to you)
+    final netWorth = savings - borrowed + lent;
+
     return Column(
       children: [
-        // ── Big cards row ──
         IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -37,8 +40,9 @@ class SummaryCards extends StatelessWidget {
                       ? '${((savings / income) * 100).clamp(0.0, 100.0).toStringAsFixed(0)}% of income saved'
                       : 'No income recorded',
                   amount: savings,
-                  progressValue:
-                      income > 0 ? (savings / income).clamp(0.0, 1.0) : 0.0,
+                  progressValue: income > 0
+                      ? (savings / income).clamp(0.0, 1.0)
+                      : 0.0,
                   cardColor:
                       savings >= 0 ? context.appIncome : context.appExpense,
                   icon: Icons.savings_rounded,
@@ -48,14 +52,17 @@ class SummaryCards extends StatelessWidget {
               Expanded(
                 child: _BigCard(
                   title: 'Net Worth',
-                  subtitle: borrowed > 0
-                      ? '−${formatCompact(borrowed)} borrowed'
-                      : 'No liabilities',
-                  amount: savings - borrowed,
+                  // Show breakdown in subtitle
+                  subtitle: borrowed > 0 || lent > 0
+                      ? '${lent > 0 ? '+${formatCompact(lent)} lent' : ''}${borrowed > 0 && lent > 0 ? '  ' : ''}${borrowed > 0 ? '−${formatCompact(borrowed)} owed' : ''}'
+                      : 'No outstanding balances',
+                  amount: netWorth,
                   progressValue: income > 0
-                      ? ((savings - borrowed) / income).clamp(0.0, 1.0)
+                      ? (netWorth / income).clamp(0.0, 1.0)
                       : 0.0,
-                  cardColor: context.appAccent,
+                  cardColor: netWorth >= 0
+                      ? context.appAccent
+                      : context.appExpense,
                   icon: Icons.account_balance_rounded,
                 ),
               ),
@@ -65,7 +72,6 @@ class SummaryCards extends StatelessWidget {
 
         const Gap(12),
 
-        // ── Mini cards row ──
         Row(
           children: [
             Expanded(
@@ -95,7 +101,7 @@ class SummaryCards extends StatelessWidget {
               if (borrowed > 0)
                 Expanded(
                   child: _MiniCard(
-                    label: 'Borrowed',
+                    label: 'I Owe',
                     amount: borrowed,
                     color: context.appBorrowed,
                     icon: Icons.handshake_rounded,
@@ -105,7 +111,7 @@ class SummaryCards extends StatelessWidget {
               if (lent > 0)
                 Expanded(
                   child: _MiniCard(
-                    label: 'Lent Out',
+                    label: 'Owed to Me',
                     amount: lent,
                     color: context.appLend,
                     icon: Icons.send_rounded,
@@ -120,20 +126,15 @@ class SummaryCards extends StatelessWidget {
 }
 
 class _BigCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final double amount;
-  final double progressValue;
+  final String title, subtitle;
+  final double amount, progressValue;
   final Color cardColor;
   final IconData icon;
 
   const _BigCard({
-    required this.title,
-    required this.subtitle,
-    required this.amount,
-    required this.progressValue,
-    required this.cardColor,
-    required this.icon,
+    required this.title, required this.subtitle,
+    required this.amount, required this.progressValue,
+    required this.cardColor, required this.icon,
   });
 
   @override
@@ -142,12 +143,8 @@ class _BigCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            cardColor.withValues(alpha: 0.12),
-            context.appSurface,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+          colors: [cardColor.withValues(alpha: 0.12), context.appSurface],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: cardColor.withValues(alpha: 0.28)),
@@ -155,43 +152,34 @@ class _BigCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: cardColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: cardColor, size: 15),
+          Row(children: [
+            Container(
+              width: 28, height: 28,
+              decoration: BoxDecoration(
+                color: cardColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
               ),
-              const Gap(8),
-              Expanded(
-                child: Text(
-                  title,
+              child: Icon(icon, color: cardColor, size: 15),
+            ),
+            const Gap(8),
+            Expanded(
+              child: Text(title,
                   style: GoogleFonts.dmSans(
-                    color: context.appTextSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
+                      color: context.appTextSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ]),
           const Gap(10),
-          // FittedBox prevents overflow when the number is large
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
               formatCurrency(amount),
               style: GoogleFonts.dmSans(
-                color: cardColor,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.8,
+                color: cardColor, fontSize: 18,
+                fontWeight: FontWeight.w700, letterSpacing: -0.8,
               ),
             ),
           ),
@@ -206,21 +194,14 @@ class _BigCard extends StatelessWidget {
             ),
           ),
           const Gap(6),
-          Text(
-            subtitle,
-            style: GoogleFonts.dmSans(
-              color: context.appTextMuted,
-              fontSize: 10,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          Text(subtitle,
+              style: GoogleFonts.dmSans(
+                  color: context.appTextMuted, fontSize: 10),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
         ],
       ),
-    )
-        .animate()
-        .fadeIn(duration: 400.ms)
-        .slideY(begin: 0.1, end: 0, duration: 400.ms);
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0, duration: 400.ms);
   }
 }
 
@@ -231,10 +212,8 @@ class _MiniCard extends StatelessWidget {
   final IconData icon;
 
   const _MiniCard({
-    required this.label,
-    required this.amount,
-    required this.color,
-    required this.icon,
+    required this.label, required this.amount,
+    required this.color, required this.icon,
   });
 
   @override
@@ -246,50 +225,40 @@ class _MiniCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(icon, color: color, size: 16),
+      child: Row(children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(9),
           ),
-          const Gap(8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
+          child: Icon(icon, color: color, size: 16),
+        ),
+        const Gap(8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
                   style: GoogleFonts.dmSans(
-                    color: context.appTextSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
+                      color: context.appTextSecondary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500)),
+              const Gap(2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  formatCompact(amount),
+                  style: GoogleFonts.dmSans(
+                      color: color, fontSize: 15,
+                      fontWeight: FontWeight.w700, letterSpacing: -0.5),
                 ),
-                const Gap(2),
-                // FittedBox shrinks the text if it would overflow on small screens
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    formatCompact(amount),
-                    style: GoogleFonts.dmSans(
-                      color: color,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ]),
     )
         .animate()
         .fadeIn(duration: 400.ms, delay: 150.ms)

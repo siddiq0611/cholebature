@@ -1,9 +1,13 @@
-// Exports ALL data as three separate CSV files bundled in one share action:
-//   1. transactions.csv          — all normal transactions
-//   2. scheduled_transactions.csv — future/recurring transactions
+// lib/services/export_service.dart
 //
-// On Android the files are also copied to ~/Downloads.
+// Single CSV export containing ALL data:
+//   DataType | ID | Date/NextDue | Title | Type | Category | Amount | Note | ExtraJson
 //
+// DataType values:
+//   "Transaction"  — normal / borrow / lend transactions
+//   "Scheduled"    — future/recurring transactions (extra fields in ExtraJson)
+//
+import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
@@ -14,101 +18,85 @@ import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
 
 class ExportService {
+  static const _header = [
+    'DataType', 'ID', 'Date', 'Title', 'Type', 'Category',
+    'Amount (₹)', 'Note', 'ExtraJson',
+  ];
+
   static Future<void> exportAll({
     required List<Transaction> transactions,
     required List<FutureTransaction> futureTransactions,
   }) async {
-    final ts = DateTime.now().millisecondsSinceEpoch;
+    final rows = <List<String>>[_header];
+
+    // ── Normal / Borrow / Lend transactions ────────────────────────────────
+    for (final t in transactions) {
+      rows.add([
+        'Transaction',
+        t.id,
+        formatDate(t.date),
+        t.title,
+        _txTypeLabel(t.type),
+        categoryInfoMap[t.category]!.label,
+        t.amount.toStringAsFixed(2),
+        t.note ?? '',
+        '', // no extra
+      ]);
+    }
+
+    // ── Scheduled / Future transactions ────────────────────────────────────
+    for (final ft in futureTransactions) {
+      final extra = jsonEncode({
+        'recurrence': ft.recurrence.name,
+        'recurrenceDays': ft.recurrenceDays,
+        'nextDue': ft.nextDue.toIso8601String(),
+        'status': ft.status.name,
+        'reminderOffsets': ft.reminderOffsets,
+        'createdAt': ft.createdAt.toIso8601String(),
+      });
+      rows.add([
+        'Scheduled',
+        ft.id,
+        ft.nextDue.toIso8601String(),
+        ft.title,
+        ft.type == TransactionType.income ? 'Income' : 'Expense',
+        categoryInfoMap[ft.category]!.label,
+        ft.amount.toStringAsFixed(2),
+        ft.note ?? '',
+        extra,
+      ]);
+    }
+
+    final csv  = const ListToCsvConverter().convert(rows);
+    final ts   = DateTime.now().millisecondsSinceEpoch;
+    final name = 'cholebature_backup_$ts.csv';
+
     final tmpDir = await getTemporaryDirectory();
-    final files  = <XFile>[];
+    final tmpFile = File('${tmpDir.path}/$name');
+    await tmpFile.writeAsString(csv);
 
-    // ── 1. Transactions ──────────────────────────────────────────────────────
-    if (transactions.isNotEmpty) {
-      final rows = <List<String>>[
-        ['ID', 'Date', 'Title', 'Type', 'Category', 'Amount (₹)', 'Note'],
-        ...transactions.map((t) => [
-              t.id,
-              formatDate(t.date),
-              t.title,
-              _txTypeLabel(t.type),
-              categoryInfoMap[t.category]!.label,
-              t.amount.toStringAsFixed(2),
-              t.note ?? '',
-            ]),
-      ];
-      final f = await _writeCSV(tmpDir, 'transactions_$ts.csv', rows);
-      files.add(XFile(f.path, mimeType: 'text/csv'));
-      await _copyToDownloads(f, 'transactions_$ts.csv');
+    // Copy to public Downloads on Android
+    if (Platform.isAndroid) {
+      try {
+        const dl = '/storage/emulated/0/Download';
+        if (await Directory(dl).exists()) {
+          await tmpFile.copy('$dl/$name');
+        }
+      } catch (_) {}
     }
-
-    // ── 2. Scheduled / Future transactions ───────────────────────────────────
-    if (futureTransactions.isNotEmpty) {
-      final rows = <List<String>>[
-        [
-          'ID', 'Title', 'Amount (₹)', 'Type', 'Category',
-          'Recurrence', 'RecurrenceDays', 'NextDue',
-          'Status', 'ReminderOffsets', 'Note', 'CreatedAt',
-        ],
-        ...futureTransactions.map((ft) => [
-              ft.id,
-              ft.title,
-              ft.amount.toStringAsFixed(2),
-              _ftTypeLabel(ft.type),
-              categoryInfoMap[ft.category]!.label,
-              ft.recurrence.name,
-              ft.recurrenceDays.join(','),
-              ft.nextDue.toIso8601String(),
-              ft.status.name,
-              ft.reminderOffsets.join(','),
-              ft.note ?? '',
-              ft.createdAt.toIso8601String(),
-            ]),
-      ];
-      final f = await _writeCSV(
-          tmpDir, 'scheduled_transactions_$ts.csv', rows);
-      files.add(XFile(f.path, mimeType: 'text/csv'));
-      await _copyToDownloads(f, 'scheduled_transactions_$ts.csv');
-    }
-
-    if (files.isEmpty) return;
 
     await Share.shareXFiles(
-      files,
-      subject: 'CholeBature — Full Export',
+      [XFile(tmpFile.path, mimeType: 'text/csv')],
+      subject: 'CholeBature — Full Backup',
       text: 'Exported ${transactions.length} transactions'
-          '${futureTransactions.isNotEmpty ? ' + ${futureTransactions.length} scheduled' : ''}',
+            ' + ${futureTransactions.length} scheduled',
     );
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  static Future<File> _writeCSV(
-      Directory dir, String name, List<List<String>> rows) async {
-    final csv  = const ListToCsvConverter().convert(rows);
-    final file = File('${dir.path}/$name');
-    await file.writeAsString(csv);
-    return file;
-  }
-
-  static Future<void> _copyToDownloads(File src, String name) async {
-    if (!Platform.isAndroid) return;
-    try {
-      const dl = '/storage/emulated/0/Download';
-      if (await Directory(dl).exists()) {
-        await src.copy('$dl/$name');
-      }
-    } catch (_) {}
-  }
-
-  static String _txTypeLabel(TransactionType t) {
-    switch (t) {
-      case TransactionType.expense:  return 'Expense';
-      case TransactionType.income:   return 'Income';
-      case TransactionType.borrowed: return 'Borrowed';
-      case TransactionType.lend:     return 'Lend';
-    }
-  }
-
-  static String _ftTypeLabel(TransactionType t) =>
-      t == TransactionType.income ? 'Income' : 'Expense';
+  static String _txTypeLabel(TransactionType t) => switch (t) {
+        TransactionType.expense  => 'Expense',
+        TransactionType.income   => 'Income',
+        TransactionType.borrowed => 'Borrowed',
+        TransactionType.lend     => 'Lend',
+      };
 }

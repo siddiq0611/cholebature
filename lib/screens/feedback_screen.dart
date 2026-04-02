@@ -5,10 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 
+// ── Replace with your actual Google Form values ────────────────────────────────
 const _googleFormBase =
     'https://docs.google.com/forms/d/e/1FAIpQLSfN3hgpUR66QS0emkH0uCMA14ul4j93w3FXoIy74W88V-ndDw/formResponse';
-
-const _entryRating = 'entry.1993910943';
+const _entryRating  = 'entry.1993910943';
 const _entryMessage = 'entry.2031031347';
 
 class FeedbackScreen extends StatefulWidget {
@@ -21,7 +21,11 @@ class FeedbackScreen extends StatefulWidget {
 class _FeedbackScreenState extends State<FeedbackScreen> {
   int _stars = 0;
   final _msgCtrl = TextEditingController();
-  bool _sending = false;
+
+  // Three distinct states for the button
+  _SubmitState _submitState = _SubmitState.idle;
+  String? _errorMessage;
+
   bool _sent = false;
 
   @override
@@ -31,51 +35,62 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   }
 
   Future<void> _submit() async {
+    // Validate
     if (_stars == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Please select a star rating',
-            style: GoogleFonts.dmSans(color: Colors.white)),
-        backgroundColor: context.appBorrowed,
-        behavior: SnackBarBehavior.floating,
-      ));
+      setState(() => _errorMessage = 'Please select a star rating before submitting.');
       return;
     }
 
-    // Show spinner immediately
-    setState(() => _sending = true);
+    setState(() {
+      _submitState  = _SubmitState.sending;
+      _errorMessage = null;
+    });
 
     final ratingText = '$_stars star${_stars > 1 ? 's' : ''}';
-    final msg = _msgCtrl.text.trim();
+    final msg        = _msgCtrl.text.trim();
 
     final uri = Uri.parse(_googleFormBase).replace(queryParameters: {
-      _entryRating: ratingText,
+      _entryRating:  ratingText,
       _entryMessage: msg,
     });
 
-    // Try to submit; give it up to 8 seconds before giving up gracefully.
-    // Either way we show the success screen — Google Forms returns a redirect
-    // (303) which http treats as an error on some devices, but the submission
-    // still goes through.
     try {
-      await http.post(uri).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => http.Response('timeout', 408),
-      );
-    } catch (_) {
-      // Swallow — submission likely still went through via the redirect.
-    }
+      // POST with a generous timeout so we wait for the real response
+      final response = await http
+          .post(uri)
+          .timeout(const Duration(seconds: 15));
 
-    // Only update state if still mounted
-    if (!mounted) return;
-    setState(() {
-      _sending = false;
-      _sent = true;
-    });
+      // Google Forms returns 200 on success or a redirect (303).
+      // statusCode < 400 means it was accepted.
+      if (response.statusCode < 400) {
+        if (mounted) setState(() { _submitState = _SubmitState.idle; _sent = true; });
+      } else {
+        if (mounted) {
+          setState(() {
+            _submitState  = _SubmitState.idle;
+            _errorMessage =
+                'Submission failed (HTTP ${response.statusCode}). Please try again.';
+          });
+        }
+      }
+    } on Exception catch (e) {
+      // Network error, timeout, etc.
+      if (mounted) {
+        setState(() {
+          _submitState  = _SubmitState.idle;
+          _errorMessage =
+              'Could not reach the server. Check your connection and try again.\n\n'
+              '(${e.toString().split(':').first})';
+        });
+      }
+    }
   }
 
   void _reset() => setState(() {
-        _sent = false;
-        _stars = 0;
+        _sent         = false;
+        _stars        = 0;
+        _submitState  = _SubmitState.idle;
+        _errorMessage = null;
         _msgCtrl.clear();
       });
 
@@ -86,8 +101,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       appBar: AppBar(
         backgroundColor: context.appBg,
         leading: IconButton(
-          icon:
-              Icon(Icons.arrow_back_rounded, color: context.appTextPrimary),
+          icon: Icon(Icons.arrow_back_rounded, color: context.appTextPrimary),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text('Feedback',
@@ -102,41 +116,48 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       body: _sent
           ? _ThankYouView(onReset: _reset)
           : _FormView(
-              stars: _stars,
-              sending: _sending,
-              msgCtrl: _msgCtrl,
-              onStarTap: (s) => setState(() => _stars = s),
-              onSubmit: _submit,
+              stars:        _stars,
+              submitState:  _submitState,
+              msgCtrl:      _msgCtrl,
+              errorMessage: _errorMessage,
+              onStarTap:    (s) => setState(() { _stars = s; _errorMessage = null; }),
+              onSubmit:     _submit,
             ),
     );
   }
 }
 
+enum _SubmitState { idle, sending }
+
 // ── Form view ──────────────────────────────────────────────────────────────────
 
 class _FormView extends StatelessWidget {
   final int stars;
-  final bool sending;
+  final _SubmitState submitState;
   final TextEditingController msgCtrl;
+  final String? errorMessage;
   final void Function(int) onStarTap;
   final VoidCallback onSubmit;
 
   const _FormView({
     required this.stars,
-    required this.sending,
+    required this.submitState,
     required this.msgCtrl,
+    required this.errorMessage,
     required this.onStarTap,
     required this.onSubmit,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isSending = submitState == _SubmitState.sending;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Hero section
+          // Hero card
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
@@ -146,44 +167,39 @@ class _FormView extends StatelessWidget {
               border: Border.all(
                   color: const Color(0xFFFFD700).withValues(alpha: 0.2)),
             ),
-            child: Column(
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.star_rounded,
-                      color: Color(0xFFFFD700), size: 36),
+            child: Column(children: [
+              Container(
+                width: 64, height: 64,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFD700).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
                 ),
-                const Gap(16),
-                Text('Rate CholeBature',
-                    style: GoogleFonts.dmSans(
-                        color: context.appTextPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3)),
-                const Gap(6),
-                Text(
-                  'Your feedback helps us improve the app\nand add features you care about.',
+                child: const Icon(Icons.star_rounded,
+                    color: Color(0xFFFFD700), size: 36),
+              ),
+              const Gap(16),
+              Text('Rate CholeBature',
                   style: GoogleFonts.dmSans(
-                      color: context.appTextSecondary,
-                      fontSize: 13,
-                      height: 1.5),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
+                      color: context.appTextPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3)),
+              const Gap(6),
+              Text(
+                'Your feedback helps us improve the app\nand add features you care about.',
+                style: GoogleFonts.dmSans(
+                    color: context.appTextSecondary,
+                    fontSize: 13, height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+            ]),
           ),
           const Gap(28),
 
           Text('How would you rate your experience?',
               style: GoogleFonts.dmSans(
                   color: context.appTextPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600)),
+                  fontSize: 15, fontWeight: FontWeight.w600)),
           const Gap(16),
 
           // Star row
@@ -192,7 +208,7 @@ class _FormView extends StatelessWidget {
             children: List.generate(5, (i) {
               final filled = i < stars;
               return GestureDetector(
-                onTap: () => onStarTap(i + 1),
+                onTap: isSending ? null : () => onStarTap(i + 1),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: AnimatedSwitcher(
@@ -200,9 +216,7 @@ class _FormView extends StatelessWidget {
                     transitionBuilder: (child, anim) =>
                         ScaleTransition(scale: anim, child: child),
                     child: Icon(
-                      filled
-                          ? Icons.star_rounded
-                          : Icons.star_outline_rounded,
+                      filled ? Icons.star_rounded : Icons.star_outline_rounded,
                       key: ValueKey(filled),
                       color: filled
                           ? const Color(0xFFFFD700)
@@ -221,19 +235,12 @@ class _FormView extends StatelessWidget {
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
                 child: Text(
-                  [
-                    '',
-                    'Poor 😞',
-                    'Fair 😐',
-                    'Good 🙂',
-                    'Great 😊',
-                    'Excellent! 🤩'
-                  ][stars],
+                  ['', 'Poor 😞', 'Fair 😐', 'Good 🙂',
+                   'Great 😊', 'Excellent! 🤩'][stars],
                   key: ValueKey(stars),
                   style: GoogleFonts.dmSans(
                       color: context.appAccent,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600),
+                      fontSize: 15, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
@@ -243,12 +250,12 @@ class _FormView extends StatelessWidget {
           Text('Leave a message (optional)',
               style: GoogleFonts.dmSans(
                   color: context.appTextPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600)),
+                  fontSize: 15, fontWeight: FontWeight.w600)),
           const Gap(10),
           TextField(
             controller: msgCtrl,
             maxLines: 5,
+            enabled: !isSending,
             style: GoogleFonts.dmSans(
                 color: context.appTextPrimary, fontSize: 14),
             decoration: InputDecoration(
@@ -259,33 +266,90 @@ class _FormView extends StatelessWidget {
               alignLabelWithHint: true,
             ),
           ),
-          const Gap(32),
+          const Gap(20),
 
+          // ── Inline error box (visible, never hidden behind anything) ──────
+          if (errorMessage != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: context.appExpense.withValues(alpha: 0.09),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: context.appExpense.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline_rounded,
+                      color: context.appExpense, size: 18),
+                  const Gap(8),
+                  Expanded(
+                    child: Text(
+                      errorMessage!,
+                      style: GoogleFonts.dmSans(
+                          color: context.appExpense, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // ── Submit button ─────────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: sending ? null : onSubmit,
-              icon: sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.send_rounded,
-                      size: 18, color: Colors.white),
-              label: Text(
-                  sending ? 'Submitting…' : 'Submit Feedback',
-                  style: GoogleFonts.dmSans(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15)),
+            child: ElevatedButton(
+              onPressed: isSending ? null : onSubmit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: context.appAccent,
+                disabledBackgroundColor:
+                    context.appAccent.withValues(alpha: 0.6),
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
+              child: isSending
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        ),
+                        const Gap(10),
+                        Text('Submitting…',
+                            style: GoogleFonts.dmSans(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15)),
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.send_rounded,
+                            size: 18, color: Colors.white),
+                        const Gap(8),
+                        Text('Submit Feedback',
+                            style: GoogleFonts.dmSans(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15)),
+                      ],
+                    ),
+            ),
+          ),
+
+          const Gap(12),
+          Center(
+            child: Text(
+              'Your feedback is submitted directly in the background.',
+              style: GoogleFonts.dmSans(
+                  color: context.appTextMuted, fontSize: 11),
+              textAlign: TextAlign.center,
             ),
           ),
         ],
@@ -309,8 +373,7 @@ class _ThankYouView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 80,
-              height: 80,
+              width: 80, height: 80,
               decoration: BoxDecoration(
                 color: context.appIncome.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
@@ -327,11 +390,10 @@ class _ThankYouView extends StatelessWidget {
                     letterSpacing: -0.5)),
             const Gap(10),
             Text(
-              'Your feedback helps us make CholeBature\nbetter for everyone.',
+              'Your feedback helps us make CholeBature\nbetter for everyone. 🙏',
               style: GoogleFonts.dmSans(
                   color: context.appTextSecondary,
-                  fontSize: 14,
-                  height: 1.6),
+                  fontSize: 14, height: 1.6),
               textAlign: TextAlign.center,
             ),
             const Gap(32),

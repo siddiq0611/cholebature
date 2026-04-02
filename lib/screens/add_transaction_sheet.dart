@@ -29,6 +29,9 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   DateTime _date = DateTime.now();
   bool _saving = false;
 
+  // ── Inline error — always visible inside the sheet ─────────────────────────
+  String? _errorMsg;
+
   static const _uuid = Uuid();
   bool get _isEditing => widget.existing != null;
 
@@ -80,13 +83,23 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
     final rawTitle = _titleCtrl.text.trim();
     final raw      = _amountCtrl.text.trim();
 
-    if (rawTitle.isEmpty) { _showError('Please enter a title'); return; }
-    if (raw.isEmpty)      { _showError('Please enter an amount'); return; }
-    final amount = double.tryParse(raw);
-    if (amount == null || amount <= 0) {
-      _showError('Enter a valid amount');
+    // Show inline error — always visible inside the sheet
+    if (rawTitle.isEmpty) {
+      setState(() => _errorMsg = 'Please enter a title.');
       return;
     }
+    if (raw.isEmpty) {
+      setState(() => _errorMsg = 'Please enter an amount.');
+      return;
+    }
+    final amount = double.tryParse(raw);
+    if (amount == null || amount <= 0) {
+      setState(() => _errorMsg = 'Enter a valid amount greater than zero.');
+      return;
+    }
+
+    // Clear any previous error
+    setState(() => _errorMsg = null);
 
     if (_isEditing) {
       final confirmed = await _confirmDialog(
@@ -116,21 +129,12 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
-        _showError('Failed to save: $e');
+        setState(() {
+          _saving   = false;
+          _errorMsg = 'Failed to save: ${e.toString()}';
+        });
       }
     }
-  }
-
-  // ── Error shown INSIDE the modal sheet ────────────────────────────────────
-  void _showError(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: GoogleFonts.dmSans(color: Colors.white)),
-      backgroundColor: context.appExpense,
-      behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-    ));
   }
 
   Future<bool> _confirmDialog(String title, String message) async {
@@ -145,14 +149,13 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                     color: context.appTextPrimary,
                     fontWeight: FontWeight.w700)),
             content: Text(message,
-                style:
-                    GoogleFonts.dmSans(color: context.appTextSecondary)),
+                style: GoogleFonts.dmSans(color: context.appTextSecondary)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: Text('Cancel',
-                    style: GoogleFonts.dmSans(
-                        color: context.appTextSecondary)),
+                    style:
+                        GoogleFonts.dmSans(color: context.appTextSecondary)),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
@@ -181,6 +184,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Drag handle
           Padding(
             padding: const EdgeInsets.only(top: 12, bottom: 4),
             child: Center(
@@ -193,6 +197,46 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
               ),
             ),
           ),
+
+          // ── Inline error banner — sits above the scrollable content ──────
+          // This is ALWAYS visible; it is never obscured by the sheet itself.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            child: _errorMsg != null
+                ? Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: context.appExpense.withValues(alpha: 0.09),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: context.appExpense.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline_rounded,
+                            color: context.appExpense, size: 16),
+                        const Gap(8),
+                        Expanded(
+                          child: Text(
+                            _errorMsg!,
+                            style: GoogleFonts.dmSans(
+                                color: context.appExpense, fontSize: 13),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => setState(() => _errorMsg = null),
+                          child: Icon(Icons.close_rounded,
+                              color: context.appExpense, size: 16),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+
           Flexible(
             child: SingleChildScrollView(
               keyboardDismissBehavior:
@@ -218,6 +262,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                     onChanged: (t) => setState(() {
                       _type = t;
                       _category = _defaultCategoryFor(t);
+                      _errorMsg = null;
                     }),
                   ),
                   const Gap(16),
@@ -225,6 +270,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                   TextField(
                     controller: _titleCtrl,
                     textCapitalization: TextCapitalization.sentences,
+                    onChanged: (_) => setState(() => _errorMsg = null),
                     style: GoogleFonts.dmSans(
                         color: context.appTextPrimary, fontSize: 15),
                     decoration: InputDecoration(
@@ -243,6 +289,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                       FilteringTextInputFormatter.allow(
                           RegExp(r'^\d+\.?\d{0,2}'))
                     ],
+                    onChanged: (_) => setState(() => _errorMsg = null),
                     style: GoogleFonts.dmSans(
                       color: context.appTextPrimary,
                       fontSize: 18,
@@ -316,8 +363,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                           ? const SizedBox(
                               width: 20, height: 20,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white),
+                                  strokeWidth: 2, color: Colors.white),
                             )
                           : Text(_isEditing
                               ? 'Update Transaction'
@@ -434,12 +480,10 @@ class _CategoryPicker extends StatelessWidget {
         Text('Category',
             style: GoogleFonts.dmSans(
                 color: context.appTextSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w500)),
+                fontSize: 12, fontWeight: FontWeight.w500)),
         const Gap(8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 8, runSpacing: 8,
           children: _cats.map((c) {
             final info  = categoryInfoMap[c]!;
             final isSel = selected == c;
@@ -463,9 +507,7 @@ class _CategoryPicker extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(info.icon,
-                        color: isSel
-                            ? info.color
-                            : context.appTextMuted,
+                        color: isSel ? info.color : context.appTextMuted,
                         size: 14),
                     const Gap(5),
                     Text(info.label,

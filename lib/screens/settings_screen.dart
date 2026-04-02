@@ -56,14 +56,7 @@ class SettingsScreen extends ConsumerWidget {
                     subtitle: _themeModeLabel(themeMode),
                     trailing: _ThemeCycleBtn(
                       themeMode: themeMode,
-                      onCycle: () {
-                        ref.read(themeModeProvider.notifier).state =
-                            switch (themeMode) {
-                          ThemeMode.system => ThemeMode.light,
-                          ThemeMode.light  => ThemeMode.dark,
-                          ThemeMode.dark   => ThemeMode.system,
-                        };
-                      },
+                      onCycle: () => ref.read(themeModeProvider.notifier).cycle(),
                     ),
                   ),
                 ]),
@@ -173,7 +166,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: context.appTextSecondary,
                     title: 'Version',
-                    subtitle: '3.4.16',
+                    subtitle: '3.4.17',
                   ),
                   _Divider(),
                   _Tile(

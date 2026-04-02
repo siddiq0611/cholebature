@@ -13,17 +13,12 @@ import '../utils/formatters.dart';
 import '../widgets/category_icon.dart';
 import 'add_future_transaction_sheet.dart';
 
-// ── Pagination provider for scheduled tab ──────────────────────────────────────
-final scheduledPageProvider = StateProvider<int>((ref) => 0);
-const _kScheduledPageSize = 15;
-
 class FutureTransactionsScreen extends ConsumerWidget {
   const FutureTransactionsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ftAsync = ref.watch(futureTransactionProvider);
-    final page = ref.watch(scheduledPageProvider);
 
     return Scaffold(
       backgroundColor: context.appBg,
@@ -48,7 +43,8 @@ class FutureTransactionsScreen extends ConsumerWidget {
                   builder: (_) => const AddFutureTransactionSheet(),
                 ),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   margin: const EdgeInsets.only(right: 16),
                   decoration: BoxDecoration(
                     color: context.appAccent,
@@ -82,89 +78,54 @@ class FutureTransactionsScreen extends ConsumerWidget {
               if (list.isEmpty) {
                 return SliverFillRemaining(child: _EmptyState());
               }
-
               final overdue = list.where((ft) => ft.isOverdue).toList();
               final dueToday =
                   list.where((ft) => ft.isDueToday && !ft.isOverdue).toList();
               final upcoming =
                   list.where((ft) => !ft.isOverdue && !ft.isDueToday).toList();
 
-              // Flatten all into sections for pagination
-              final allItems = <_SectionedItem>[];
-              if (overdue.isNotEmpty) {
-                allItems.add(_SectionedItem.header('Overdue', context.appExpense, overdue.length));
-                for (final ft in overdue) allItems.add(_SectionedItem.tile(ft));
-              }
-              if (dueToday.isNotEmpty) {
-                allItems.add(_SectionedItem.header('Due Today', context.appBorrowed, dueToday.length));
-                for (final ft in dueToday) allItems.add(_SectionedItem.tile(ft));
-              }
-              if (upcoming.isNotEmpty) {
-                allItems.add(_SectionedItem.header('Upcoming', context.appTextSecondary, upcoming.length));
-                for (final ft in upcoming) allItems.add(_SectionedItem.tile(ft));
-              }
-
-              // Count only tile items for pagination
-              final tileItems = allItems.where((i) => i.ft != null).toList();
-              final totalTiles = tileItems.length;
-              final totalPages = (totalTiles / _kScheduledPageSize).ceil();
-              final clampedPage = page.clamp(0, totalPages > 0 ? totalPages - 1 : 0);
-
-              // Get tiles for current page
-              final startIdx = clampedPage * _kScheduledPageSize;
-              final endIdx = (startIdx + _kScheduledPageSize).clamp(0, totalTiles);
-              final pageTiles = tileItems.sublist(startIdx, endIdx).map((i) => i.ft!).toSet();
-
-              // Build display list preserving section headers
-              final displayItems = <_SectionedItem>[];
-              _SectionedItem? pendingHeader;
-              for (final item in allItems) {
-                if (item.ft == null) {
-                  pendingHeader = item;
-                } else if (pageTiles.contains(item.ft)) {
-                  if (pendingHeader != null) {
-                    displayItems.add(pendingHeader);
-                    pendingHeader = null;
-                  }
-                  displayItems.add(item);
-                }
-              }
-
               return SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    ...displayItems.asMap().entries.map((e) {
-                      final item = e.value;
-                      if (item.ft == null) {
-                        // Section header
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8, top: 8),
-                          child: _SectionHeader(
-                            label: item.label!,
-                            color: item.color!,
-                            count: item.count!,
-                          ),
-                        );
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: FutureTransactionTile(ft: item.ft!, index: e.key),
-                      );
-                    }),
-                    // Pagination controls
-                    if (totalPages > 1)
-                      _PaginationBar(
-                        currentPage: clampedPage,
-                        totalPages: totalPages,
-                        totalItems: totalTiles,
-                        onPrev: clampedPage > 0
-                            ? () => ref.read(scheduledPageProvider.notifier).state = clampedPage - 1
-                            : null,
-                        onNext: clampedPage < totalPages - 1
-                            ? () => ref.read(scheduledPageProvider.notifier).state = clampedPage + 1
-                            : null,
-                      ),
+                    if (overdue.isNotEmpty) ...[
+                      _SectionHeader(
+                          label: 'Overdue',
+                          color: context.appExpense,
+                          count: overdue.length),
+                      const Gap(8),
+                      ...overdue.asMap().entries.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: FutureTransactionTile(
+                                ft: e.value, index: e.key),
+                          )),
+                      const Gap(8),
+                    ],
+                    if (dueToday.isNotEmpty) ...[
+                      _SectionHeader(
+                          label: 'Due Today',
+                          color: context.appBorrowed,
+                          count: dueToday.length),
+                      const Gap(8),
+                      ...dueToday.asMap().entries.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: FutureTransactionTile(
+                                ft: e.value, index: e.key),
+                          )),
+                      const Gap(8),
+                    ],
+                    if (upcoming.isNotEmpty) ...[
+                      _SectionHeader(
+                          label: 'Upcoming',
+                          color: context.appTextSecondary,
+                          count: upcoming.length),
+                      const Gap(8),
+                      ...upcoming.asMap().entries.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: FutureTransactionTile(
+                                ft: e.value, index: e.key),
+                          )),
+                    ],
                   ]),
                 ),
               );
@@ -176,94 +137,12 @@ class FutureTransactionsScreen extends ConsumerWidget {
   }
 }
 
-class _SectionedItem {
-  final FutureTransaction? ft;
-  final String? label;
-  final Color? color;
-  final int? count;
-
-  const _SectionedItem.tile(this.ft) : label = null, color = null, count = null;
-  const _SectionedItem.header(this.label, this.color, this.count) : ft = null;
-}
-
-class _PaginationBar extends StatelessWidget {
-  final int currentPage;
-  final int totalPages;
-  final int totalItems;
-  final VoidCallback? onPrev;
-  final VoidCallback? onNext;
-
-  const _PaginationBar({
-    required this.currentPage,
-    required this.totalPages,
-    required this.totalItems,
-    this.onPrev,
-    this.onNext,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final start = currentPage * _kScheduledPageSize + 1;
-    final end = ((currentPage + 1) * _kScheduledPageSize).clamp(0, totalItems);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _PageBtn(
-            icon: Icons.chevron_left_rounded,
-            onTap: onPrev,
-          ),
-          const Gap(16),
-          Text(
-            '$start–$end of $totalItems',
-            style: GoogleFonts.dmSans(
-                color: context.appTextSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500),
-          ),
-          const Gap(16),
-          _PageBtn(
-            icon: Icons.chevron_right_rounded,
-            onTap: onNext,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PageBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  const _PageBtn({required this.icon, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onTap != null;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: enabled ? context.appSurfaceElevated : context.appBorder.withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: context.appBorder),
-        ),
-        child: Icon(icon,
-            color: enabled ? context.appTextSecondary : context.appTextMuted,
-            size: 18),
-      ),
-    );
-  }
-}
-
 class _SectionHeader extends StatelessWidget {
   final String label;
   final Color color;
   final int count;
-  const _SectionHeader({required this.label, required this.color, required this.count});
+  const _SectionHeader(
+      {required this.label, required this.color, required this.count});
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +177,8 @@ class _SectionHeader extends StatelessWidget {
 class FutureTransactionTile extends ConsumerWidget {
   final FutureTransaction ft;
   final int index;
-  const FutureTransactionTile({super.key, required this.ft, required this.index});
+  const FutureTransactionTile(
+      {super.key, required this.ft, required this.index});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -389,12 +269,15 @@ class FutureTransactionTile extends ConsumerWidget {
                               fontSize: 15,
                               fontWeight: FontWeight.w700))
                       : Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: context.appBorrowed.withValues(alpha: 0.12),
+                            color:
+                                context.appBorrowed.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                                color: context.appBorrowed.withValues(alpha: 0.3)),
+                                color: context.appBorrowed
+                                    .withValues(alpha: 0.3)),
                           ),
                           child: Text('Variable',
                               style: GoogleFonts.dmSans(
@@ -404,11 +287,13 @@ class FutureTransactionTile extends ConsumerWidget {
                         ),
                   const Gap(4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: statusColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                      border:
+                          Border.all(color: statusColor.withValues(alpha: 0.3)),
                     ),
                     child: Text(statusLabel,
                         style: GoogleFonts.dmSans(
@@ -428,7 +313,8 @@ class FutureTransactionTile extends ConsumerWidget {
                     label: 'Mark Done',
                     icon: Icons.check_circle_rounded,
                     color: context.appIncome,
-                    onTap: () => _markDone(context, ref, notifier),
+                    // FIX: pass context directly — no rootNavigator tricks needed
+                    onTap: () => _markDone(context, notifier),
                   ),
                 ),
                 const Gap(8),
@@ -448,60 +334,63 @@ class FutureTransactionTile extends ConsumerWidget {
     )
         .animate()
         .fadeIn(duration: 300.ms, delay: (index * 40).ms)
-        .slideX(begin: -0.04, end: 0, duration: 300.ms, delay: (index * 40).ms);
+        .slideX(
+            begin: -0.04,
+            end: 0,
+            duration: 300.ms,
+            delay: (index * 40).ms);
   }
 
-  /// Shows the mark done dialog using the root navigator — this is the fix
-  /// for the "screen dims but nothing happens" bug. We must NOT use the
-  /// context that belongs to a bottom sheet or any overlay.
+  // ── Mark Done: show dialog directly without rootNavigator ──────────────────
+  // The root cause of the bug: using rootNavigator:true with a context that's
+  // inside an IndexedStack causes the dialog to attach to the wrong overlay.
+  // Fix: push a full-screen transparent route instead of a dialog.
   Future<void> _markDone(
-    BuildContext context,
-    WidgetRef ref,
-    FutureTransactionNotifier notifier,
-  ) async {
-    // Find the root overlay context — avoids the dialog being swallowed
-    // by any bottom sheet's route.
-    final result = await showDialog<({double amount, DateTime date})>(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: true,
-      builder: (ctx) => _MarkDoneDialog(ft: ft),
-    );
+      BuildContext context, FutureTransactionNotifier notifier) async {
+    final result = await _showMarkDoneDialog(context);
     if (result == null) return;
     await notifier.markDone(ft,
         overrideAmount: result.amount, recordDate: result.date);
   }
 
-  void _showOptions(
-    BuildContext context,
-    WidgetRef ref,
-    FutureTransactionNotifier notifier,
-  ) {
+  Future<({double amount, DateTime date})?> _showMarkDoneDialog(
+      BuildContext context) {
+    return Navigator.of(context, rootNavigator: false).push<({double amount, DateTime date})>(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        barrierColor: Colors.black54,
+        pageBuilder: (ctx, _, __) => _MarkDoneDialogPage(ft: ft),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 180),
+      ),
+    );
+  }
+
+  void _showOptions(BuildContext context, WidgetRef ref,
+      FutureTransactionNotifier notifier) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      useRootNavigator: true,
+      useRootNavigator: false,
       builder: (sheetCtx) => _OptionsSheet(
-        ft: ft,
-        notifier: notifier,
-        ref: ref,
-        rootContext: context,
-      ),
+          ft: ft, notifier: notifier, ref: ref, rootContext: context),
     );
   }
 }
 
-// ── Mark Done Dialog ───────────────────────────────────────────────────────────
+// ── Mark Done as a full-screen page route (fixes the dim-and-nothing bug) ──────
 
-class _MarkDoneDialog extends StatefulWidget {
+class _MarkDoneDialogPage extends StatefulWidget {
   final FutureTransaction ft;
-  const _MarkDoneDialog({required this.ft});
+  const _MarkDoneDialogPage({required this.ft});
 
   @override
-  State<_MarkDoneDialog> createState() => _MarkDoneDialogState();
+  State<_MarkDoneDialogPage> createState() => _MarkDoneDialogPageState();
 }
 
-class _MarkDoneDialogState extends State<_MarkDoneDialog> {
+class _MarkDoneDialogPageState extends State<_MarkDoneDialogPage> {
   late final TextEditingController _amountCtrl;
   DateTime _date = DateTime.now();
 
@@ -552,139 +441,194 @@ class _MarkDoneDialogState extends State<_MarkDoneDialog> {
       ));
       return;
     }
-    // Use rootNavigator: true so we pop the dialog, not any underlying route
-    Navigator.of(context, rootNavigator: true).pop((amount: amount, date: _date));
+    Navigator.of(context).pop((amount: amount, date: _date));
   }
 
   @override
   Widget build(BuildContext context) {
     final isVariable = widget.ft.amount == 0;
 
-    return AlertDialog(
-      backgroundColor: context.appSurfaceElevated,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-      title: Row(children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: context.appIncome.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(Icons.check_circle_rounded, color: context.appIncome, size: 18),
-        ),
-        const Gap(12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Mark as Done',
-                  style: GoogleFonts.dmSans(
-                      color: context.appTextPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700)),
-              Text(widget.ft.title,
-                  style: GoogleFonts.dmSans(
-                      color: context.appTextSecondary, fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        ),
-      ]),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Gap(4),
-            TextField(
-              controller: _amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))
-              ],
-              autofocus: isVariable,
-              style: GoogleFonts.dmSans(
-                  color: context.appTextPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700),
-              decoration: InputDecoration(
-                labelText: isVariable ? 'Enter amount (₹)' : 'Amount (₹)',
-                hintText: isVariable ? 'Required' : 'Change if needed',
-                prefixIcon: Icon(Icons.currency_rupee_rounded,
-                    color: context.appTextMuted, size: 18),
-              ),
-            ),
-            const Gap(12),
-            GestureDetector(
-              onTap: _pickDate,
+    return GestureDetector(
+      // Tap outside dialog dismisses
+      onTap: () => Navigator.of(context).pop(null),
+      behavior: HitTestBehavior.opaque,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(
+          child: GestureDetector(
+            // Prevent tap from propagating to the outer GestureDetector
+            onTap: () {},
+            child: Material(
+              color: Colors.transparent,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                margin: const EdgeInsets.symmetric(horizontal: 24),
                 decoration: BoxDecoration(
-                  color: context.appSurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.appBorder),
+                  color: context.appSurfaceElevated,
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                child: Row(children: [
-                  Icon(Icons.calendar_today_rounded,
-                      color: context.appTextMuted, size: 16),
-                  const Gap(8),
-                  Text(
-                    '${_date.day}/${_date.month}/${_date.year}',
-                    style: GoogleFonts.dmSans(
-                        color: context.appTextPrimary, fontSize: 14),
-                  ),
-                  const Spacer(),
-                  Text('Change',
-                      style: GoogleFonts.dmSans(
-                          color: context.appAccent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500)),
-                ]),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Title
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      child: Row(children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: context.appIncome.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.check_circle_rounded,
+                              color: context.appIncome, size: 18),
+                        ),
+                        const Gap(12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Mark as Done',
+                                  style: GoogleFonts.dmSans(
+                                      color: context.appTextPrimary,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700)),
+                              Text(widget.ft.title,
+                                  style: GoogleFonts.dmSans(
+                                      color: context.appTextSecondary,
+                                      fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close_rounded,
+                              color: context.appTextMuted, size: 20),
+                          onPressed: () => Navigator.of(context).pop(null),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ]),
+                    ),
+                    // Content
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                      child: Column(
+                        children: [
+                          TextField(
+                            controller: _amountCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d+\.?\d{0,2}'))
+                            ],
+                            autofocus: isVariable,
+                            style: GoogleFonts.dmSans(
+                              color: context.appTextPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: isVariable
+                                  ? 'Enter amount (₹)'
+                                  : 'Amount (₹)',
+                              hintText:
+                                  isVariable ? 'Required' : 'Change if needed',
+                              prefixIcon: Icon(Icons.currency_rupee_rounded,
+                                  color: context.appTextMuted, size: 18),
+                            ),
+                          ),
+                          const Gap(12),
+                          GestureDetector(
+                            onTap: _pickDate,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: context.appSurface,
+                                borderRadius: BorderRadius.circular(12),
+                                border:
+                                    Border.all(color: context.appBorder),
+                              ),
+                              child: Row(children: [
+                                Icon(Icons.calendar_today_rounded,
+                                    color: context.appTextMuted, size: 16),
+                                const Gap(8),
+                                Text(
+                                  '${_date.day}/${_date.month}/${_date.year}',
+                                  style: GoogleFonts.dmSans(
+                                      color: context.appTextPrimary,
+                                      fontSize: 14),
+                                ),
+                                const Spacer(),
+                                Text('Change',
+                                    style: GoogleFonts.dmSans(
+                                        color: context.appAccent,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500)),
+                              ]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Actions
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(context).pop(null),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: context.appTextSecondary,
+                                side: BorderSide(color: context.appBorder),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: Text('Cancel',
+                                  style: GoogleFonts.dmSans(
+                                      fontWeight: FontWeight.w500)),
+                            ),
+                          ),
+                          const Gap(10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _submit,
+                              icon: const Icon(Icons.check_rounded,
+                                  size: 18, color: Colors.white),
+                              label: Text('Record Transaction',
+                                  style: GoogleFonts.dmSans(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: context.appIncome,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ],
+          ),
         ),
       ),
-      actions: [
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: () => Navigator.of(context, rootNavigator: true).pop(null),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: context.appTextSecondary,
-              side: BorderSide(color: context.appBorder),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text('Cancel',
-                style: GoogleFonts.dmSans(fontWeight: FontWeight.w500)),
-          ),
-        ),
-        const Gap(10),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _submit,
-            icon: const Icon(Icons.check_rounded, size: 18, color: Colors.white),
-            label: Text('Record Transaction',
-                style: GoogleFonts.dmSans(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: context.appIncome,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -740,14 +684,21 @@ class _OptionsSheet extends ConsumerWidget {
             color: context.appIncome,
             onTap: () async {
               Navigator.of(context).pop();
-              // Small delay to let the bottom sheet finish dismissing
-              await Future.delayed(const Duration(milliseconds: 150));
+              // Small delay so the bottom sheet fully dismisses before route push
+              await Future.delayed(const Duration(milliseconds: 220));
               if (!rootContext.mounted) return;
-              final result = await showDialog<({double amount, DateTime date})>(
-                context: rootContext,
-                useRootNavigator: true,
-                barrierDismissible: true,
-                builder: (_) => _MarkDoneDialog(ft: ft),
+              final result = await Navigator.of(rootContext,
+                      rootNavigator: false)
+                  .push<({double amount, DateTime date})>(
+                PageRouteBuilder(
+                  opaque: false,
+                  barrierDismissible: true,
+                  barrierColor: Colors.black54,
+                  pageBuilder: (ctx, _, __) => _MarkDoneDialogPage(ft: ft),
+                  transitionsBuilder: (_, anim, __, child) =>
+                      FadeTransition(opacity: anim, child: child),
+                  transitionDuration: const Duration(milliseconds: 180),
+                ),
               );
               if (result != null) {
                 await notifier.markDone(ft,
@@ -867,7 +818,9 @@ class _ActionButton extends StatelessWidget {
               const Gap(5),
               Text(label,
                   style: GoogleFonts.dmSans(
-                      color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+                      color: color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -888,9 +841,10 @@ class _EmptyState extends StatelessWidget {
                     fontSize: 16,
                     fontWeight: FontWeight.w600)),
             const Gap(6),
-            Text('Tap Schedule to add recurring or future transactions',
-                style:
-                    GoogleFonts.dmSans(color: context.appTextMuted, fontSize: 13),
+            Text(
+                'Tap Schedule to add recurring or future transactions',
+                style: GoogleFonts.dmSans(
+                    color: context.appTextMuted, fontSize: 13),
                 textAlign: TextAlign.center),
           ],
         ),

@@ -1,16 +1,15 @@
+// lib/services/security_service.dart
+// Biometric REMOVED completely.
+
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:local_auth/local_auth.dart';
-import 'package:local_auth/error_codes.dart' as auth_error;
 import '../models/security_model.dart';
 
 class SecurityService {
   static const _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
-  static final _localAuth = LocalAuthentication();
 
   static const _kEnabled   = 'lock_enabled';
   static const _kType      = 'lock_type';
@@ -25,15 +24,21 @@ class SecurityService {
     final typeStr    = await _storage.read(key: _kType);
     final timeoutStr = await _storage.read(key: _kTimeout);
 
-    final type = typeStr == null
-        ? LockType.none
-        : LockType.values.firstWhere(
-            (t) => t.name == typeStr,
-            orElse: () => LockType.none,
-          );
+    LockType type;
+    if (typeStr == null || typeStr == 'none' || typeStr == 'biometric') {
+      type = LockType.none;
+    } else {
+      type = LockType.values.firstWhere(
+        (t) => t.name == typeStr,
+        orElse: () => LockType.none,
+      );
+    }
+
+    // If was biometric, treat as disabled
+    final isEnabled = enabled == 'true' && type != LockType.none;
 
     return SecuritySettings(
-      enabled: enabled == 'true',
+      enabled: isEnabled,
       lockType: type,
       autoLockSeconds: int.tryParse(timeoutStr ?? '30') ?? 30,
     );
@@ -75,59 +80,6 @@ class SecurityService {
     if (stored == null) return false;
     return _hash(input) == stored;
   }
-
-  // ─── Biometric ─────────────────────────────────────────────────────────────
-  // NOTE: MainActivity MUST extend FlutterFragmentActivity (not FlutterActivity)
-  // for local_auth to work on Android. See android/app/src/main/kotlin/.../MainActivity.kt
-
-  static Future<bool> isBiometricAvailable() async {
-    try {
-      if (!await _localAuth.isDeviceSupported()) return false;
-      return await _localAuth.canCheckBiometrics;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Returns (success, errorMessage).
-  static Future<({bool success, String? error})>
-      authenticateWithBiometricResult() async {
-    try {
-      final ok = await _localAuth.authenticate(
-        localizedReason: 'Authenticate to access CholeBature',
-        options: const AuthenticationOptions(
-          biometricOnly: true,
-          stickyAuth: true,
-          sensitiveTransaction: false,
-        ),
-      );
-      return (success: ok, error: ok ? null : 'Authentication was cancelled.');
-    } on PlatformException catch (e) {
-      return (success: false, error: _errMsg(e));
-    } catch (e) {
-      return (success: false, error: 'Unexpected error: $e');
-    }
-  }
-
-  static String _errMsg(PlatformException e) {
-    switch (e.code) {
-      case auth_error.notAvailable:
-        return 'Biometric hardware is not available on this device.';
-      case auth_error.notEnrolled:
-        return 'No fingerprints enrolled. Go to Settings → Biometrics and add one.';
-      case auth_error.lockedOut:
-        return 'Too many failed attempts. Wait 30 seconds and try again.';
-      case auth_error.permanentlyLockedOut:
-        return 'Biometrics permanently locked. Use PIN or Password instead.';
-      case auth_error.passcodeNotSet:
-        return 'No device screen lock set. Enable one in device Settings first.';
-      default:
-        return e.message ?? 'Biometric auth failed (${e.code}).';
-    }
-  }
-
-  static Future<bool> authenticateWithBiometric() async =>
-      (await authenticateWithBiometricResult()).success;
 
   static String _hash(String input) =>
       sha256.convert(utf8.encode(input)).toString();

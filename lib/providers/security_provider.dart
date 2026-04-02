@@ -1,3 +1,6 @@
+// lib/providers/security_provider.dart
+// Biometric REMOVED.
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/security_model.dart';
 import '../services/security_service.dart';
@@ -18,7 +21,6 @@ class SecuritySettingsNotifier extends StateNotifier<SecuritySettings> {
   }
 
   Future<void> enable(LockType type, String credential) async {
-    // Pass isPin=true when the type is PIN so the digit count gets stored
     await SecurityService.setCredential(
       credential,
       isPin: type == LockType.pin,
@@ -31,13 +33,6 @@ class SecuritySettingsNotifier extends StateNotifier<SecuritySettings> {
   Future<void> disable() async {
     await SecurityService.disable();
     final updated = state.copyWith(enabled: false, lockType: LockType.none);
-    if (mounted) state = updated;
-  }
-
-  Future<void> enableBiometric() async {
-    final updated =
-        state.copyWith(enabled: true, lockType: LockType.biometric);
-    await SecurityService.saveSettings(updated);
     if (mounted) state = updated;
   }
 

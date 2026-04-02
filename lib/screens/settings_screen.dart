@@ -1,6 +1,6 @@
 // lib/screens/settings_screen.dart
-// CHANGED: Feedback section now navigates to FeedbackScreen
-// instead of showing an inline card.
+// Biometric REMOVED from _SetLockSheet and everywhere else.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -17,7 +17,7 @@ import '../services/import_service.dart';
 import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import 'budget_screen.dart';
-import 'feedback_screen.dart'; // NEW IMPORT
+import 'feedback_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -33,11 +33,13 @@ class SettingsScreen extends ConsumerWidget {
         slivers: [
           SliverAppBar(
             backgroundColor: context.appBg,
-            floating: true, snap: true,
+            floating: true,
+            snap: true,
             title: Text('Settings',
                 style: GoogleFonts.dmSans(
                     color: context.appTextPrimary,
-                    fontSize: 22, fontWeight: FontWeight.w800,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
                     letterSpacing: -0.8)),
           ),
           SliverPadding(
@@ -98,15 +100,14 @@ class SettingsScreen extends ConsumerWidget {
                       iconColor: context.appAccent,
                       title: 'Auto-Lock After',
                       subtitle: _autoLockLabel(secSettings.autoLockSeconds),
-                      onTap: () =>
-                          _showAutoLock(context, ref, secSettings),
+                      onTap: () => _showAutoLock(context, ref, secSettings),
                     ),
                     _Divider(),
                     _Tile(
                       icon: Icons.edit_rounded,
                       iconColor: context.appTextSecondary,
                       title: 'Change Lock Method',
-                      subtitle: 'PIN, password, or biometric',
+                      subtitle: 'PIN or password',
                       onTap: () => _showSetLock(context, ref),
                     ),
                   ],
@@ -135,8 +136,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.download_rounded,
                     iconColor: context.appAccent,
                     title: 'Export All Data',
-                    subtitle:
-                        'One CSV with transactions + scheduled → Downloads',
+                    subtitle: 'One CSV with transactions + scheduled → Downloads',
                     onTap: () => _export(context, ref),
                   ),
                   _Divider(),
@@ -149,7 +149,6 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ]),
 
-                // CHANGED: Feedback is now a navigation tile, not an inline card
                 const Gap(20),
                 _SectionHeader(label: 'Feedback'),
                 const Gap(8),
@@ -161,8 +160,7 @@ class SettingsScreen extends ConsumerWidget {
                     subtitle: 'Share your feedback and suggestions',
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(
-                          builder: (_) => const FeedbackScreen()),
+                      MaterialPageRoute(builder: (_) => const FeedbackScreen()),
                     ),
                   ),
                 ]),
@@ -175,7 +173,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: context.appTextSecondary,
                     title: 'Version',
-                    subtitle: '3.4.14',
+                    subtitle: '3.4.16',
                   ),
                   _Divider(),
                   _Tile(
@@ -200,10 +198,9 @@ class SettingsScreen extends ConsumerWidget {
       };
 
   String _lockLabel(LockType t) => switch (t) {
-        LockType.none      => 'None',
-        LockType.pin       => 'PIN',
-        LockType.password  => 'Password',
-        LockType.biometric => 'Biometric',
+        LockType.none     => 'None',
+        LockType.pin      => 'PIN',
+        LockType.password => 'Password',
       };
 
   String _autoLockLabel(int s) {
@@ -239,12 +236,10 @@ class SettingsScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: context.appSurfaceElevated,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Import from CSV',
             style: GoogleFonts.dmSans(
-                color: context.appTextPrimary,
-                fontWeight: FontWeight.w700)),
+                color: context.appTextPrimary, fontWeight: FontWeight.w700)),
         content: Text(
           'Select a CholeBature backup CSV.\n\n'
           'Transactions and scheduled items are restored. '
@@ -256,22 +251,18 @@ class SettingsScreen extends ConsumerWidget {
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: Text('Cancel',
-                  style: GoogleFonts.dmSans(
-                      color: context.appTextSecondary))),
+                  style: GoogleFonts.dmSans(color: context.appTextSecondary))),
           ElevatedButton.icon(
             onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.folder_open_rounded,
-                size: 16, color: Colors.white),
+            icon: const Icon(Icons.folder_open_rounded, size: 16, color: Colors.white),
             label: Text('Choose File',
                 style: GoogleFonts.dmSans(
                     color: Colors.white, fontWeight: FontWeight.w600)),
             style: ElevatedButton.styleFrom(
               backgroundColor: context.appAccent,
               elevation: 0,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
         ],
@@ -286,8 +277,7 @@ class SettingsScreen extends ConsumerWidget {
         .when<List<FutureTransaction>>(
             data: (v) => v, loading: () => [], error: (_, __) => []);
 
-    _snack(context, 'Opening file picker…',
-        color: context.appAccent, dur: 1);
+    _snack(context, 'Opening file picker…', color: context.appAccent, dur: 1);
     final result = await ImportService.pickAndParseAll(
         existingTx: existTx, existingFt: existFt);
     if (result == null || !context.mounted) return;
@@ -314,7 +304,8 @@ class SettingsScreen extends ConsumerWidget {
       context,
       'Imported ${parts.join(' + ')}'
       '${skipped > 0 ? ', skipped $skipped duplicates' : ''}',
-      color: context.appIncome, dur: 4,
+      color: context.appIncome,
+      dur: 4,
     );
   }
 
@@ -336,12 +327,13 @@ class SettingsScreen extends ConsumerWidget {
         builder: (_) => _SetLockSheet(),
       );
 
-  Future<void> _showAutoLock(BuildContext context, WidgetRef ref,
-      SecuritySettings settings) =>
+  Future<void> _showAutoLock(
+          BuildContext context, WidgetRef ref, SecuritySettings settings) =>
       showModalBottomSheet(
         context: context,
         backgroundColor: Colors.transparent,
-        builder: (_) => _AutoLockSheet(current: settings.autoLockSeconds),
+        builder: (_) =>
+            _AutoLockSheet(current: settings.autoLockSeconds),
       );
 }
 
@@ -355,12 +347,10 @@ class _ImportPreviewDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: context.appSurfaceElevated,
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Text('Import Preview',
           style: GoogleFonts.dmSans(
-              color: context.appTextPrimary,
-              fontWeight: FontWeight.w700)),
+              color: context.appTextPrimary, fontWeight: FontWeight.w700)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -402,13 +392,11 @@ class _ImportPreviewDialog extends StatelessWidget {
         TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('Cancel',
-                style: GoogleFonts.dmSans(
-                    color: context.appTextSecondary))),
+                style: GoogleFonts.dmSans(color: context.appTextSecondary))),
         if (result.hasAnything)
           ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: context.appIncome),
+              style: ElevatedButton.styleFrom(backgroundColor: context.appIncome),
               child: Text('Import',
                   style: GoogleFonts.dmSans(color: Colors.white))),
       ],
@@ -431,8 +419,7 @@ class _PRow extends StatelessWidget {
                     color: context.appTextSecondary, fontSize: 13))),
         Text(value,
             style: GoogleFonts.dmSans(
-                color: color,
-                fontSize: 14, fontWeight: FontWeight.w700)),
+                color: color, fontSize: 14, fontWeight: FontWeight.w700)),
       ]);
 }
 
@@ -444,8 +431,10 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(label.toUpperCase(),
       style: GoogleFonts.dmSans(
-          color: context.appTextMuted, fontSize: 11,
-          fontWeight: FontWeight.w600, letterSpacing: 0.8));
+          color: context.appTextMuted,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.8));
 }
 
 class _Card extends StatelessWidget {
@@ -469,9 +458,12 @@ class _Tile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   const _Tile({
-    required this.icon, required this.iconColor,
-    required this.title, required this.subtitle,
-    this.trailing, this.onTap,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.onTap,
   });
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -481,7 +473,8 @@ class _Tile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(children: [
             Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: iconColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
@@ -496,7 +489,8 @@ class _Tile extends StatelessWidget {
                 Text(title,
                     style: GoogleFonts.dmSans(
                         color: context.appTextPrimary,
-                        fontSize: 14, fontWeight: FontWeight.w500)),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
                 Text(subtitle,
                     style: GoogleFonts.dmSans(
                         color: context.appTextMuted, fontSize: 12)),
@@ -527,7 +521,8 @@ class _ThemeCycleBtn extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
         onTap: onCycle,
         child: Container(
-          width: 36, height: 36,
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
             color: context.appSurface,
             borderRadius: BorderRadius.circular(10),
@@ -539,13 +534,14 @@ class _ThemeCycleBtn extends StatelessWidget {
               ThemeMode.light  => Icons.light_mode_rounded,
               ThemeMode.dark   => Icons.dark_mode_rounded,
             },
-            color: context.appTextSecondary, size: 18,
+            color: context.appTextSecondary,
+            size: 18,
           ),
         ),
       );
 }
 
-// ── Set Lock Sheet ─────────────────────────────────────────────────────────────
+// ── Set Lock Sheet — biometric REMOVED ────────────────────────────────────────
 
 class _SetLockSheet extends ConsumerStatefulWidget {
   @override
@@ -553,58 +549,46 @@ class _SetLockSheet extends ConsumerStatefulWidget {
 }
 
 class _SetLockSheetState extends ConsumerState<_SetLockSheet> {
-  LockType _type = LockType.pin;
-  final _cred    = TextEditingController();
-  final _confirm = TextEditingController();
-  bool _obscure  = true;
-  bool _saving   = false;
-  bool _bioAvail = false;
+  LockType _type   = LockType.pin;
+  final _cred      = TextEditingController();
+  final _confirm   = TextEditingController();
+  bool _obscure    = true;
+  bool _saving     = false;
   String? _error;
 
   @override
-  void initState() {
-    super.initState();
-    SecurityService.isBiometricAvailable().then(
-        (v) { if (mounted) setState(() => _bioAvail = v); });
+  void dispose() {
+    _cred.dispose();
+    _confirm.dispose();
+    super.dispose();
   }
-
-  @override
-  void dispose() { _cred.dispose(); _confirm.dispose(); super.dispose(); }
 
   Future<void> _save() async {
     setState(() { _error = null; _saving = true; });
-    if (_type == LockType.biometric) {
-      final r = await SecurityService.authenticateWithBiometricResult();
-      if (!mounted) return;
-      if (r.success) {
-        await ref.read(securitySettingsProvider.notifier).enableBiometric();
-        if (mounted) Navigator.pop(context);
-      } else {
-        setState(() { _saving = false; _error = r.error; });
-      }
-      return;
-    }
+
     if (_type == LockType.pin) {
       if (_cred.text.length < 4 || _cred.text.length > 6) {
         setState(() { _saving = false; _error = 'PIN must be 4–6 digits'; });
         return;
       }
-    } else if (_cred.text.length < 4) {
-      setState(() {
-        _saving = false;
-        _error = 'Password must be at least 4 characters';
-      });
-      return;
+    } else {
+      if (_cred.text.length < 4) {
+        setState(() {
+          _saving = false;
+          _error = 'Password must be at least 4 characters';
+        });
+        return;
+      }
     }
+
     if (_cred.text != _confirm.text) {
       setState(() {
         _saving = false;
-        _error = _type == LockType.pin
-            ? 'PINs do not match'
-            : 'Passwords do not match';
+        _error = _type == LockType.pin ? 'PINs do not match' : 'Passwords do not match';
       });
       return;
     }
+
     await ref.read(securitySettingsProvider.notifier).enable(_type, _cred.text);
     if (mounted) Navigator.pop(context);
   }
@@ -623,84 +607,70 @@ class _SetLockSheetState extends ConsumerState<_SetLockSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 36, height: 4,
-                decoration: BoxDecoration(color: context.appBorder,
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: context.appBorder,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
             const Gap(16),
             Text('Set App Lock',
                 style: GoogleFonts.dmSans(
                     color: context.appTextPrimary,
-                    fontSize: 20, fontWeight: FontWeight.w700)),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700)),
             const Gap(16),
+            // Only PIN and Password — no Biometric
             Wrap(spacing: 8, runSpacing: 8, children: [
               _Chip(LockType.pin, Icons.pin_rounded, 'PIN', _type,
                   () => setState(() => _type = LockType.pin)),
               _Chip(LockType.password, Icons.key_rounded, 'Password', _type,
                   () => setState(() => _type = LockType.password)),
-              if (_bioAvail)
-                _Chip(LockType.biometric, Icons.fingerprint_rounded,
-                    'Biometric', _type,
-                    () => setState(() => _type = LockType.biometric)),
             ]),
             const Gap(16),
-            if (_type == LockType.biometric)
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: context.appSurfaceElevated,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.appBorder),
-                ),
-                child: Row(children: [
-                  Icon(Icons.fingerprint_rounded,
-                      color: context.appAccent, size: 28),
-                  const Gap(12),
-                  Expanded(
-                    child: Text(
-                      'Tap "Enable Biometric" to scan your fingerprint.\n'
-                      'Fingerprints must be enrolled in device Settings.',
-                      style: GoogleFonts.dmSans(
-                          color: context.appTextSecondary, fontSize: 13),
-                    ),
-                  ),
-                ]),
-              )
-            else ...[
-              TextField(
-                controller: _cred, obscureText: _obscure,
-                keyboardType: _type == LockType.pin
-                    ? TextInputType.number : TextInputType.text,
-                style: GoogleFonts.dmSans(
-                    color: context.appTextPrimary, fontSize: 16),
-                decoration: InputDecoration(
-                  labelText: _type == LockType.pin
-                      ? 'Enter PIN (4–6 digits)' : 'Enter password',
-                  prefixIcon: Icon(Icons.lock_outline_rounded,
-                      color: context.appTextMuted, size: 18),
-                  suffixIcon: IconButton(
-                    icon: Icon(_obscure
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                        color: context.appTextMuted, size: 18),
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                  ),
+            TextField(
+              controller: _cred,
+              obscureText: _obscure,
+              keyboardType: _type == LockType.pin
+                  ? TextInputType.number
+                  : TextInputType.text,
+              style: GoogleFonts.dmSans(
+                  color: context.appTextPrimary, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: _type == LockType.pin
+                    ? 'Enter PIN (4–6 digits)'
+                    : 'Enter password',
+                prefixIcon: Icon(Icons.lock_outline_rounded,
+                    color: context.appTextMuted, size: 18),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscure
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      color: context.appTextMuted,
+                      size: 18),
+                  onPressed: () => setState(() => _obscure = !_obscure),
                 ),
               ),
-              const Gap(12),
-              TextField(
-                controller: _confirm, obscureText: _obscure,
-                keyboardType: _type == LockType.pin
-                    ? TextInputType.number : TextInputType.text,
-                style: GoogleFonts.dmSans(
-                    color: context.appTextPrimary, fontSize: 16),
-                decoration: InputDecoration(
-                  labelText: _type == LockType.pin
-                      ? 'Confirm PIN' : 'Confirm password',
-                  prefixIcon: Icon(Icons.lock_outline_rounded,
-                      color: context.appTextMuted, size: 18),
-                ),
+            ),
+            const Gap(12),
+            TextField(
+              controller: _confirm,
+              obscureText: _obscure,
+              keyboardType: _type == LockType.pin
+                  ? TextInputType.number
+                  : TextInputType.text,
+              style: GoogleFonts.dmSans(
+                  color: context.appTextPrimary, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: _type == LockType.pin ? 'Confirm PIN' : 'Confirm password',
+                prefixIcon: Icon(Icons.lock_outline_rounded,
+                    color: context.appTextMuted, size: 18),
               ),
-            ],
+            ),
             if (_error != null) ...[
               const Gap(10),
               Container(
@@ -734,11 +704,12 @@ class _SetLockSheetState extends ConsumerState<_SetLockSheet> {
                 style: ElevatedButton.styleFrom(
                     backgroundColor: context.appAccent),
                 child: _saving
-                    ? const SizedBox(width: 20, height: 20,
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
-                    : Text(_type == LockType.biometric
-                        ? 'Enable Biometric' : 'Enable Lock'),
+                    : const Text('Enable Lock'),
               ),
             ),
           ],
@@ -763,7 +734,8 @@ class _Chip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: sel ? context.appAccent.withValues(alpha: 0.15)
+          color: sel
+              ? context.appAccent.withValues(alpha: 0.15)
               : context.appSurfaceElevated,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
@@ -771,13 +743,15 @@ class _Chip extends StatelessWidget {
               width: sel ? 1.5 : 1),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14,
+          Icon(icon,
+              size: 14,
               color: sel ? context.appAccent : context.appTextMuted),
           const Gap(5),
-          Text(label, style: GoogleFonts.dmSans(
-              color: sel ? context.appAccent : context.appTextSecondary,
-              fontSize: 12,
-              fontWeight: sel ? FontWeight.w600 : FontWeight.w400)),
+          Text(label,
+              style: GoogleFonts.dmSans(
+                  color: sel ? context.appAccent : context.appTextSecondary,
+                  fontSize: 12,
+                  fontWeight: sel ? FontWeight.w600 : FontWeight.w400)),
         ]),
       ),
     );
@@ -803,8 +777,8 @@ class _AutoLockSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.6),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
       padding: EdgeInsets.fromLTRB(
           20, 16, 20, 16 + MediaQuery.of(context).padding.bottom),
       decoration: BoxDecoration(
@@ -815,14 +789,21 @@ class _AutoLockSheet extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(child: Container(width: 36, height: 4,
-              decoration: BoxDecoration(color: context.appBorder,
-                  borderRadius: BorderRadius.circular(2)))),
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: context.appBorder,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
           const Gap(16),
           Text('Auto-Lock After',
               style: GoogleFonts.dmSans(
                   color: context.appTextPrimary,
-                  fontSize: 18, fontWeight: FontWeight.w700)),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700)),
           const Gap(12),
           Flexible(
             child: SingleChildScrollView(
@@ -833,30 +814,30 @@ class _AutoLockSheet extends ConsumerWidget {
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Container(
-                      width: 36, height: 36,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
                         color: (sel ? context.appAccent : context.appTextMuted)
                             .withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(Icons.timer_rounded,
-                          color: sel
-                              ? context.appAccent : context.appTextMuted,
+                          color: sel ? context.appAccent : context.appTextMuted,
                           size: 18),
                     ),
                     title: Text(o.label,
                         style: GoogleFonts.dmSans(
-                            color: sel
-                                ? context.appAccent : context.appTextPrimary,
+                            color: sel ? context.appAccent : context.appTextPrimary,
                             fontSize: 14,
-                            fontWeight: sel
-                                ? FontWeight.w600 : FontWeight.w400)),
+                            fontWeight:
+                                sel ? FontWeight.w600 : FontWeight.w400)),
                     trailing: sel
                         ? Icon(Icons.check_rounded,
                             color: context.appAccent, size: 18)
                         : null,
                     onTap: () async {
-                      await ref.read(securitySettingsProvider.notifier)
+                      await ref
+                          .read(securitySettingsProvider.notifier)
                           .setAutoLockTimeout(o.seconds);
                       if (context.mounted) Navigator.pop(context);
                     },

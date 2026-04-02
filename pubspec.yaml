@@ -13,6 +13,7 @@ dependencies:
   # State Management
   flutter_riverpod: ^2.4.9
 
+
   # Local Database
   sqflite: ^2.3.0
   path: ^1.8.3
@@ -49,6 +50,7 @@ dependencies:
   # Crypto (PIN / password hashing)
   crypto: ^3.0.3
   url_launcher: ^6.3.2
+  flutter_timezone: ^5.0.2
 
 dev_dependencies:
   flutter_test:

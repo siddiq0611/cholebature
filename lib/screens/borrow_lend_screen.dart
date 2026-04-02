@@ -1,3 +1,4 @@
+// lib/screens/borrow_lend_screen.dart
 import 'package:chole_bature/models/transaction_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -11,6 +12,10 @@ import '../utils/formatters.dart';
 import '../widgets/borrow_lend_tile.dart';
 import 'add_transaction_sheet.dart';
 
+// Pagination for borrow/lend
+final blPageProvider = StateProvider<int>((ref) => 0);
+const _kBLPageSize = 15;
+
 class BorrowLendScreen extends ConsumerWidget {
   const BorrowLendScreen({super.key});
 
@@ -18,10 +23,10 @@ class BorrowLendScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final blAsync = ref.watch(borrowLendProvider);
     final notifier = ref.read(borrowLendProvider.notifier);
+    final page = ref.watch(blPageProvider);
 
     return Scaffold(
       backgroundColor: context.appBg,
-      // FAB defaults to Borrow type
       floatingActionButton: FloatingActionButton(
         onPressed: () => showModalBottomSheet(
           context: context,
@@ -66,10 +71,49 @@ class BorrowLendScreen extends ConsumerWidget {
             ),
             data: (txs) {
               final entries = txs.map((t) => BorrowLendEntry(t)).toList();
-              final borrowed =
-                  entries.where((e) => e.isBorrowed).toList();
+              final borrowed = entries.where((e) => e.isBorrowed).toList();
               final lent = entries.where((e) => e.isLent).toList();
               final summary = BorrowLendSummary.from(entries);
+
+              // Flatten for pagination: borrow section then lend section
+              final allEntries = <_SectionedEntry>[];
+              if (borrowed.isNotEmpty) {
+                allEntries.add(_SectionedEntry.borrowedHeader());
+                for (final e in borrowed) allEntries.add(_SectionedEntry.entry(e));
+              }
+              if (lent.isNotEmpty) {
+                allEntries.add(_SectionedEntry.lentHeader());
+                for (final e in lent) allEntries.add(_SectionedEntry.entry(e));
+              }
+
+              // Count only entry items for pagination
+              final entryItems = allEntries.where((i) => i.entry != null).toList();
+              final totalEntries = entryItems.length;
+              final totalPages = totalEntries > 0
+                  ? (totalEntries / _kBLPageSize).ceil()
+                  : 1;
+              final clampedPage = page.clamp(0, totalPages - 1);
+              final startIdx = clampedPage * _kBLPageSize;
+              final endIdx = (startIdx + _kBLPageSize).clamp(0, totalEntries);
+              final pageEntries = entryItems
+                  .sublist(startIdx, endIdx)
+                  .map((i) => i.entry!)
+                  .toSet();
+
+              // Build display preserving headers
+              final displayItems = <_SectionedEntry>[];
+              _SectionedEntry? pendingHeader;
+              for (final item in allEntries) {
+                if (item.entry == null) {
+                  pendingHeader = item;
+                } else if (pageEntries.any((e) => e.id == item.entry!.id)) {
+                  if (pendingHeader != null) {
+                    displayItems.add(pendingHeader);
+                    pendingHeader = null;
+                  }
+                  displayItems.add(item);
+                }
+              }
 
               return SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -80,41 +124,54 @@ class BorrowLendScreen extends ConsumerWidget {
                     if (entries.isEmpty)
                       _EmptyState()
                     else ...[
-                      if (borrowed.isNotEmpty) ...[
-                        _SectionHeader(
-                          label: 'Borrowed  (I owe)',
-                          color: context.appBorrowed,
-                          outstanding: summary.outstandingBorrowed,
-                          count: borrowed.length,
+                      ...displayItems.asMap().entries.map((e) {
+                        final item = e.value;
+                        if (item.entry == null) {
+                          // Section header
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8, top: 4),
+                            child: _SectionHeader(
+                              label: item.isBorrowedHeader!
+                                  ? 'Borrowed  (I owe)'
+                                  : 'Lent  (owed to me)',
+                              color: item.isBorrowedHeader!
+                                  ? context.appBorrowed
+                                  : context.appLend,
+                              outstanding: item.isBorrowedHeader!
+                                  ? summary.outstandingBorrowed
+                                  : summary.outstandingLent,
+                              count: item.isBorrowedHeader!
+                                  ? borrowed.length
+                                  : lent.length,
+                            ),
+                          );
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: BorrowLendTile(
+                            entry: item.entry!,
+                            index: e.key,
+                            onChanged: () => notifier.load(),
+                          ),
+                        );
+                      }),
+                      // Pagination bar
+                      if (totalPages > 1)
+                        _PaginationBar(
+                          currentPage: clampedPage,
+                          totalPages: totalPages,
+                          totalItems: totalEntries,
+                          onPrev: clampedPage > 0
+                              ? () => ref
+                                  .read(blPageProvider.notifier)
+                                  .state = clampedPage - 1
+                              : null,
+                          onNext: clampedPage < totalPages - 1
+                              ? () => ref
+                                  .read(blPageProvider.notifier)
+                                  .state = clampedPage + 1
+                              : null,
                         ),
-                        const Gap(8),
-                        ...borrowed.asMap().entries.map((e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: BorrowLendTile(
-                                entry: e.value,
-                                index: e.key,
-                                onChanged: () => notifier.load(),
-                              ),
-                            )),
-                        const Gap(12),
-                      ],
-                      if (lent.isNotEmpty) ...[
-                        _SectionHeader(
-                          label: 'Lent  (owed to me)',
-                          color: context.appLend,
-                          outstanding: summary.outstandingLent,
-                          count: lent.length,
-                        ),
-                        const Gap(8),
-                        ...lent.asMap().entries.map((e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: BorrowLendTile(
-                                entry: e.value,
-                                index: e.key,
-                                onChanged: () => notifier.load(),
-                              ),
-                            )),
-                      ],
                     ],
                   ]),
                 ),
@@ -122,6 +179,97 @@ class BorrowLendScreen extends ConsumerWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SectionedEntry {
+  final BorrowLendEntry? entry;
+  final bool? isBorrowedHeader; // null if it's a data entry
+
+  const _SectionedEntry.entry(this.entry) : isBorrowedHeader = null;
+  const _SectionedEntry.borrowedHeader()
+      : entry = null,
+        isBorrowedHeader = true;
+  const _SectionedEntry.lentHeader()
+      : entry = null,
+        isBorrowedHeader = false;
+}
+
+class _PaginationBar extends StatelessWidget {
+  final int currentPage;
+  final int totalPages;
+  final int totalItems;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  const _PaginationBar({
+    required this.currentPage,
+    required this.totalPages,
+    required this.totalItems,
+    this.onPrev,
+    this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final start = currentPage * _kBLPageSize + 1;
+    final end = ((currentPage + 1) * _kBLPageSize).clamp(0, totalItems);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _PageBtn(icon: Icons.chevron_left_rounded, onTap: onPrev),
+          const Gap(16),
+          Column(
+            children: [
+              Text(
+                '$start–$end of $totalItems',
+                style: GoogleFonts.dmSans(
+                    color: context.appTextSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500),
+              ),
+              Text(
+                'Page ${currentPage + 1} of $totalPages',
+                style: GoogleFonts.dmSans(
+                    color: context.appTextMuted, fontSize: 11),
+              ),
+            ],
+          ),
+          const Gap(16),
+          _PageBtn(icon: Icons.chevron_right_rounded, onTap: onNext),
+        ],
+      ),
+    );
+  }
+}
+
+class _PageBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _PageBtn({required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: enabled
+              ? context.appSurfaceElevated
+              : context.appBorder.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: context.appBorder),
+        ),
+        child: Icon(icon,
+            color: enabled ? context.appTextSecondary : context.appTextMuted,
+            size: 20),
       ),
     );
   }
@@ -166,9 +314,7 @@ class _BLSummary extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                (summary.netPositive
-                        ? context.appIncome
-                        : context.appExpense)
+                (summary.netPositive ? context.appIncome : context.appExpense)
                     .withValues(alpha: 0.1),
                 context.appSurface,
               ],
@@ -177,9 +323,7 @@ class _BLSummary extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: (summary.netPositive
-                      ? context.appIncome
-                      : context.appExpense)
+              color: (summary.netPositive ? context.appIncome : context.appExpense)
                   .withValues(alpha: 0.3),
             ),
           ),
@@ -189,9 +333,7 @@ class _BLSummary extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: (summary.netPositive
-                          ? context.appIncome
-                          : context.appExpense)
+                  color: (summary.netPositive ? context.appIncome : context.appExpense)
                       .withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -199,9 +341,7 @@ class _BLSummary extends StatelessWidget {
                   summary.netPositive
                       ? Icons.trending_up_rounded
                       : Icons.trending_down_rounded,
-                  color: summary.netPositive
-                      ? context.appIncome
-                      : context.appExpense,
+                  color: summary.netPositive ? context.appIncome : context.appExpense,
                   size: 18,
                 ),
               ),
@@ -219,9 +359,7 @@ class _BLSummary extends StatelessWidget {
                         ? 'Others owe you ${formatCompact(summary.netPosition.abs())}'
                         : 'You owe others ${formatCompact(summary.netPosition.abs())}',
                     style: GoogleFonts.dmSans(
-                      color: summary.netPositive
-                          ? context.appIncome
-                          : context.appExpense,
+                      color: summary.netPositive ? context.appIncome : context.appExpense,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -330,8 +468,7 @@ class _SectionHeader extends StatelessWidget {
           Container(
               width: 8,
               height: 8,
-              decoration:
-                  BoxDecoration(color: color, shape: BoxShape.circle)),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const Gap(8),
           Text(label,
               style: GoogleFonts.dmSans(
@@ -360,8 +497,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.handshake_rounded,
-                size: 60, color: context.appTextMuted),
+            Icon(Icons.handshake_rounded, size: 60, color: context.appTextMuted),
             const Gap(16),
             Text('No borrow/lend entries',
                 style: GoogleFonts.dmSans(
@@ -370,8 +506,7 @@ class _EmptyState extends StatelessWidget {
                     fontWeight: FontWeight.w600)),
             const Gap(6),
             Text('Tap + to record borrowed or lent money',
-                style: GoogleFonts.dmSans(
-                    color: context.appTextMuted, fontSize: 13),
+                style: GoogleFonts.dmSans(color: context.appTextMuted, fontSize: 13),
                 textAlign: TextAlign.center),
           ],
         ),

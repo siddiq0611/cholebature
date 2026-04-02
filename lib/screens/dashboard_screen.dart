@@ -9,7 +9,6 @@ import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
 import '../widgets/budget_bar.dart';
 import '../widgets/category_chart.dart';
-import '../widgets/footer_credit.dart';
 import '../widgets/summary_cards.dart';
 import 'add_transaction_sheet.dart';
 
@@ -18,11 +17,11 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final summary    = ref.watch(summaryProvider);
-    final catData    = ref.watch(categoryExpenseProvider);
-    final themeMode  = ref.watch(themeModeProvider);
-    final filter     = ref.watch(filterProvider);
-    final notifier   = ref.read(filterProvider.notifier);
+    final summary   = ref.watch(summaryProvider);
+    final catData   = ref.watch(categoryExpenseProvider);
+    final themeMode = ref.watch(themeModeProvider);
+    final filter    = ref.watch(filterProvider);
+    final notifier  = ref.read(filterProvider.notifier);
 
     return Scaffold(
       backgroundColor: context.appBg,
@@ -89,7 +88,7 @@ class DashboardScreen extends ConsumerWidget {
                   const Gap(12),
 
                 // ── Average insight ─────────────────────────────────────────
-                _AverageInsightCard(filter: filter),
+                const _AverageInsightCard(),
                 const Gap(16),
 
                 // ── Summary cards ───────────────────────────────────────────
@@ -123,7 +122,9 @@ class _PeriodFilterBar extends StatelessWidget {
   final FilterNotifier notifier;
   const _PeriodFilterBar({required this.filter, required this.notifier});
 
+  // FIX: added Daily label
   static const _labels = {
+    DateFilter.daily:   'Day',
     DateFilter.weekly:  'Week',
     DateFilter.monthly: 'Month',
     DateFilter.yearly:  'Year',
@@ -183,6 +184,16 @@ class _PeriodNav extends StatelessWidget {
 
   String _label() {
     switch (filter.filter) {
+      // FIX: Daily label
+      case DateFilter.daily:
+        final d = filter.day;
+        final now = DateTime.now();
+        if (d.year == now.year &&
+            d.month == now.month &&
+            d.day == now.day) {
+          return 'Today';
+        }
+        return '${d.day} ${_monthShort(d.month)} ${d.year}';
       case DateFilter.weekly:
         final end = filter.weekStart.add(const Duration(days: 6));
         return filter.weekStart.month == end.month
@@ -246,163 +257,81 @@ class _Chevron extends StatelessWidget {
       );
 }
 
-// ── Average spending insight ───────────────────────────────────────────────────
+// ── Average insight card — uses new provider ──────────────────────────────────
 
 class _AverageInsightCard extends ConsumerWidget {
-  final FilterState filter;
-  const _AverageInsightCard({required this.filter});
+  const _AverageInsightCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final filter = ref.watch(filterProvider);
     if (filter.filter == DateFilter.overall) return const SizedBox.shrink();
 
-    final txAsync = ref.watch(transactionListProvider);
+    final insightAsync = ref.watch(averageInsightProvider);
 
-    return txAsync.when(
+    return insightAsync.when(
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
-      data: (currentTxs) {
-        // Current period expense
-        final currentExpense = currentTxs
-            .where((t) =>
-                t.type.index == 0) // expense
-            .fold(0.0, (s, t) => s + t.amount);
+      data: (insight) {
+        if (insight == null || insight.average == 0) {
+          return const SizedBox.shrink();
+        }
 
-        return FutureBuilder<double>(
-          future: _computeAverage(ref, filter),
-          builder: (context, snap) {
-            if (!snap.hasData || snap.data == 0) {
-              return const SizedBox.shrink();
-            }
-            final avg  = snap.data!;
-            final diff = currentExpense - avg;
-            final isMore = diff > 0;
-            final color =
-                isMore ? context.appExpense : context.appIncome;
-            final pct =
-                avg > 0 ? ((diff.abs() / avg) * 100).toStringAsFixed(0) : '0';
+        final pct = insight.pctDiff.toStringAsFixed(0);
+        final color = insight.isMore ? context.appExpense : context.appIncome;
 
-            final periodName = switch (filter.filter) {
-              DateFilter.weekly  => 'week',
-              DateFilter.monthly => 'month',
-              DateFilter.yearly  => 'year',
-              DateFilter.overall => '',
-            };
+        String label;
+        if (insight.diff.abs() < 1) {
+          label = 'On par with average ${insight.periodName}';
+        } else if (insight.isMore) {
+          label = '$pct% more than average ${insight.periodName}';
+        } else {
+          label = '$pct% less than average ${insight.periodName} 🎉';
+        }
 
-            return Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: color.withValues(alpha: 0.25)),
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                insight.isMore
+                    ? Icons.trending_up_rounded
+                    : Icons.trending_down_rounded,
+                color: color, size: 18,
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    isMore
-                        ? Icons.trending_up_rounded
-                        : Icons.trending_down_rounded,
-                    color: color, size: 18,
-                  ),
-                  const Gap(10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isMore
-                              ? '$pct% more than average $periodName'
-                              : diff == 0
-                                  ? 'On par with average $periodName'
-                                  : '$pct% less than average $periodName 🎉',
-                          style: GoogleFonts.dmSans(
-                            color: color,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          'Avg: ${formatCompact(avg)}  ·  This $periodName: ${formatCompact(currentExpense)}',
-                          style: GoogleFonts.dmSans(
-                            color: context.appTextMuted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
+              const Gap(10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.dmSans(
+                        color: color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                    Text(
+                      'Avg: ${formatCompact(insight.average)}  ·  This ${insight.periodName}: ${formatCompact(insight.current)}',
+                      style: GoogleFonts.dmSans(
+                        color: context.appTextMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            );
-          },
+            ],
+          ),
         );
       },
     );
-  }
-
-  Future<double> _computeAverage(WidgetRef ref, FilterState filter) async {
-    // We read historical expenses for the last N periods and average them
-    final db = ref.read(transactionListProvider.notifier);
-    // Use a simple approach: read the all-time list from DB and bucket manually
-    // To avoid complexity, just compute based on what we have in state
-    // (this is a UI hint, not financial advice)
-
-    // For now read all transactions and compute average per period
-    try {
-      final allTxAsync = ref.read(transactionListProvider);
-      return allTxAsync.when(
-        data: (txs) {
-          if (txs.isEmpty) return 0.0;
-          final expenses = txs.where((t) => t.type.index == 0);
-          if (expenses.isEmpty) return 0.0;
-
-          switch (filter.filter) {
-            case DateFilter.weekly:
-              // Group by week number and average
-              final Map<String, double> weeks = {};
-              for (final t in expenses) {
-                final wStart = t.date.subtract(
-                    Duration(days: t.date.weekday - 1));
-                final key =
-                    '${wStart.year}-${wStart.month}-${wStart.day}';
-                weeks[key] = (weeks[key] ?? 0) + t.amount;
-              }
-              if (weeks.isEmpty) return 0;
-              return weeks.values.reduce((a, b) => a + b) /
-                  weeks.length;
-
-            case DateFilter.monthly:
-              final Map<String, double> months = {};
-              for (final t in expenses) {
-                final key = '${t.date.year}-${t.date.month}';
-                months[key] = (months[key] ?? 0) + t.amount;
-              }
-              if (months.isEmpty) return 0;
-              return months.values.reduce((a, b) => a + b) /
-                  months.length;
-
-            case DateFilter.yearly:
-              final Map<int, double> years = {};
-              for (final t in expenses) {
-                years[t.date.year] =
-                    (years[t.date.year] ?? 0) + t.amount;
-              }
-              if (years.isEmpty) return 0;
-              return years.values.reduce((a, b) => a + b) /
-                  years.length;
-
-            case DateFilter.overall:
-              return 0;
-          }
-        },
-        loading: () => 0.0,
-        error: (_, __) => 0.0,
-      );
-    } catch (_) {
-      return 0.0;
-    }
   }
 }
 

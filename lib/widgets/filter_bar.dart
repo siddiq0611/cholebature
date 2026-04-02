@@ -1,3 +1,5 @@
+// lib/widgets/filter_bar.dart
+// CHANGED: Added 'Day' filter tab matching the new DateFilter.daily enum value.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -10,10 +12,12 @@ import '../utils/formatters.dart';
 class FilterBar extends ConsumerWidget {
   const FilterBar({super.key});
 
+  // FIX: added DateFilter.daily label
   static const _labels = {
-    DateFilter.weekly: 'Week',
+    DateFilter.daily:   'Day',
+    DateFilter.weekly:  'Week',
     DateFilter.monthly: 'Month',
-    DateFilter.yearly: 'Year',
+    DateFilter.yearly:  'Year',
     DateFilter.overall: 'All',
   };
 
@@ -26,36 +30,32 @@ class FilterBar extends ConsumerWidget {
   }
 
   String _monthShort(int m) => [
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec'
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
       ][m - 1];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(filterProvider);
+    final filter   = ref.watch(filterProvider);
     final notifier = ref.read(filterProvider.notifier);
-    final accent = context.appAccent;
+    final accent   = context.appAccent;
 
     String periodLabel() {
       if (filter.specificDate != null) {
         return formatDate(filter.specificDate!);
       }
       switch (filter.filter) {
+        case DateFilter.daily:
+          final now = DateTime.now();
+          final d = filter.day;
+          if (d.year == now.year &&
+              d.month == now.month &&
+              d.day == now.day) return 'Today';
+          return '${d.day} ${_monthShort(d.month)} ${d.year}';
         case DateFilter.weekly:
           return _weekLabel(filter.weekStart);
         case DateFilter.monthly:
-          return formatMonth(
-              DateTime(filter.year, filter.month));
+          return formatMonth(DateTime(filter.year, filter.month));
         case DateFilter.yearly:
           return formatYear(filter.year);
         case DateFilter.overall:
@@ -90,8 +90,7 @@ class FilterBar extends ConsumerWidget {
                               : context.appSurfaceElevated,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color:
-                                selected ? accent : context.appBorder,
+                            color: selected ? accent : context.appBorder,
                           ),
                         ),
                         child: Text(
@@ -117,8 +116,7 @@ class FilterBar extends ConsumerWidget {
               onTap: () => _showAdvancedFilters(context, ref),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                width: 36,
-                height: 36,
+                width: 36, height: 36,
                 decoration: BoxDecoration(
                   color: hasAdvancedFilters
                       ? accent.withValues(alpha: 0.15)
@@ -251,14 +249,10 @@ class FilterBar extends ConsumerWidget {
 
   String _sortLabel(SortOption s) {
     switch (s) {
-      case SortOption.dateNewest:
-        return 'Newest first';
-      case SortOption.dateOldest:
-        return 'Oldest first';
-      case SortOption.amountHigh:
-        return 'Amount ↓';
-      case SortOption.amountLow:
-        return 'Amount ↑';
+      case SortOption.dateNewest:  return 'Newest first';
+      case SortOption.dateOldest:  return 'Oldest first';
+      case SortOption.amountHigh:  return 'Amount ↓';
+      case SortOption.amountLow:   return 'Amount ↑';
     }
   }
 
@@ -332,7 +326,7 @@ class _AdvancedFilterSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef widgetRef) {
-    final filter = widgetRef.watch(filterProvider);
+    final filter   = widgetRef.watch(filterProvider);
     final notifier = widgetRef.read(filterProvider.notifier);
 
     return Container(
@@ -349,8 +343,7 @@ class _AdvancedFilterSheet extends ConsumerWidget {
           children: [
             Center(
               child: Container(
-                width: 36,
-                height: 4,
+                width: 36, height: 4,
                 decoration: BoxDecoration(
                   color: context.appBorder,
                   borderRadius: BorderRadius.circular(2),
@@ -518,14 +511,10 @@ class _AdvancedFilterSheet extends ConsumerWidget {
 
   String _sortLabel(SortOption s) {
     switch (s) {
-      case SortOption.dateNewest:
-        return 'Newest first';
-      case SortOption.dateOldest:
-        return 'Oldest first';
-      case SortOption.amountHigh:
-        return 'Amount ↓ High';
-      case SortOption.amountLow:
-        return 'Amount ↑ Low';
+      case SortOption.dateNewest:  return 'Newest first';
+      case SortOption.dateOldest:  return 'Oldest first';
+      case SortOption.amountHigh:  return 'Amount ↓ High';
+      case SortOption.amountLow:   return 'Amount ↑ Low';
     }
   }
 }
@@ -541,15 +530,13 @@ class _NavButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 32,
-        height: 32,
+        width: 32, height: 32,
         decoration: BoxDecoration(
           color: context.appSurfaceElevated,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: context.appBorder),
         ),
-        child:
-            Icon(icon, color: context.appTextSecondary, size: 18),
+        child: Icon(icon, color: context.appTextSecondary, size: 18),
       ),
     );
   }

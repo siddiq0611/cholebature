@@ -1,10 +1,12 @@
+// lib/providers/transaction_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/transaction_model.dart';
 import '../models/budget_model.dart';
 import '../services/database_service.dart';
 
 // ─── Date Filter ───────────────────────────────────────────────────────────────
-enum DateFilter { weekly, monthly, yearly, overall }
+// FIX: Added DateFilter.daily
+enum DateFilter { daily, weekly, monthly, yearly, overall }
 
 DateTime _weekStart(DateTime date) =>
     DateTime(date.year, date.month, date.day - (date.weekday - 1));
@@ -14,6 +16,7 @@ class FilterState {
   final int year;
   final int month;
   final DateTime weekStart;
+  final DateTime day; // FIX: track selected day for daily filter
 
   // Advanced filters
   final Set<TransactionCategory> selectedCategories;
@@ -25,6 +28,7 @@ class FilterState {
     required this.year,
     required this.month,
     required this.weekStart,
+    required this.day,
     this.selectedCategories = const {},
     this.specificDate,
     this.sortBy = SortOption.dateNewest,
@@ -38,6 +42,7 @@ class FilterState {
     int? year,
     int? month,
     DateTime? weekStart,
+    DateTime? day,
     Set<TransactionCategory>? selectedCategories,
     DateTime? specificDate,
     bool clearSpecificDate = false,
@@ -48,6 +53,7 @@ class FilterState {
         year: year ?? this.year,
         month: month ?? this.month,
         weekStart: weekStart ?? this.weekStart,
+        day: day ?? this.day,
         selectedCategories:
             selectedCategories ?? this.selectedCategories,
         specificDate:
@@ -63,6 +69,7 @@ final filterProvider =
     year: now.year,
     month: now.month,
     weekStart: _weekStart(now),
+    day: DateTime(now.year, now.month, now.day),
   ));
 });
 
@@ -96,7 +103,11 @@ class FilterNotifier extends StateNotifier<FilterState> {
       );
 
   void previous() {
-    if (state.filter == DateFilter.weekly) {
+    final now = DateTime.now();
+    if (state.filter == DateFilter.daily) {
+      final prev = state.day.subtract(const Duration(days: 1));
+      state = state.copyWith(day: prev);
+    } else if (state.filter == DateFilter.weekly) {
       state = state.copyWith(
           weekStart:
               state.weekStart.subtract(const Duration(days: 7)));
@@ -111,7 +122,14 @@ class FilterNotifier extends StateNotifier<FilterState> {
 
   void next() {
     final now = DateTime.now();
-    if (state.filter == DateFilter.weekly) {
+    final today = DateTime(now.year, now.month, now.day);
+
+    if (state.filter == DateFilter.daily) {
+      final next = state.day.add(const Duration(days: 1));
+      if (!next.isAfter(today)) {
+        state = state.copyWith(day: next);
+      }
+    } else if (state.filter == DateFilter.weekly) {
       final nextWeek = state.weekStart.add(const Duration(days: 7));
       if (nextWeek.isAfter(now)) return;
       state = state.copyWith(weekStart: nextWeek);
@@ -164,6 +182,13 @@ class TransactionNotifier
         );
       } else {
         switch (filter.filter) {
+          case DateFilter.daily:
+            final d = filter.day;
+            txs = await _db.getTransactionsByDateRange(
+              DateTime(d.year, d.month, d.day),
+              DateTime(d.year, d.month, d.day + 1),
+            );
+            break;
           case DateFilter.weekly:
             txs = await _db.getTransactionsByWeek(filter.weekStart);
             break;
@@ -212,21 +237,18 @@ class TransactionNotifier
   Future<void> add(Transaction tx) async {
     await _db.insertTransaction(tx);
     await _load();
-    // Refresh the borrow/lend list so it picks up new borrowed/lend entries
     _ref.read(borrowLendProvider.notifier).load();
   }
 
   Future<void> update(Transaction tx) async {
     await _db.updateTransaction(tx);
     await _load();
-    // Refresh the borrow/lend list so settlement changes are reflected
     _ref.read(borrowLendProvider.notifier).load();
   }
 
   Future<void> delete(String id) async {
     await _db.deleteTransaction(id);
     await _load();
-    // Refresh the borrow/lend list so deleted entries disappear
     _ref.read(borrowLendProvider.notifier).load();
   }
 
@@ -296,7 +318,6 @@ final categoryExpenseProvider =
 });
 
 // ─── Borrow/Lend provider ──────────────────────────────────────────────────────
-// NOTE: load() is public so TransactionNotifier can call it after mutations.
 final borrowLendProvider =
     StateNotifierProvider<BorrowLendNotifier,
         AsyncValue<List<Transaction>>>(
@@ -460,3 +481,153 @@ class SecurityNotifier extends StateNotifier<AsyncValue<bool>> {
     state = AsyncValue.data(locked);
   }
 }
+
+// ─── Average insight provider ──────────────────────────────────────────────────
+// FIX: New correct average calculation.
+// Algorithm:
+//   1. Load ALL expense transactions from DB.
+//   2. For each period type, bucket expenses by period key.
+//   3. Average = total expenses / number of distinct periods that have ANY data.
+//   4. Compare current period total against that average.
+
+class AverageInsightResult {
+  final double average;         // average expense per period
+  final double current;         // this period's expense
+  final double diff;            // current - average
+  final bool isMore;
+  final String periodName;      // "day" / "week" / "month" / "year"
+  final bool hasData;
+
+  const AverageInsightResult({
+    required this.average,
+    required this.current,
+    required this.diff,
+    required this.isMore,
+    required this.periodName,
+    required this.hasData,
+  });
+
+  double get pctDiff =>
+      average > 0 ? ((diff.abs() / average) * 100) : 0;
+}
+
+final averageInsightProvider =
+    FutureProvider<AverageInsightResult?>((ref) async {
+  final filter = ref.watch(filterProvider);
+  if (filter.filter == DateFilter.overall) return null;
+
+  final db = DatabaseService();
+  final allTxs = await db.getAllTransactions();
+  final expenses = allTxs
+      .where((t) => t.type == TransactionType.expense)
+      .toList();
+
+  if (expenses.isEmpty) return null;
+
+  switch (filter.filter) {
+    // ── DAILY ────────────────────────────────────────────────────────────────
+    case DateFilter.daily: {
+      // Bucket by calendar day
+      final Map<String, double> days = {};
+      for (final t in expenses) {
+        final k = '${t.date.year}-${t.date.month}-${t.date.day}';
+        days[k] = (days[k] ?? 0) + t.amount;
+      }
+      if (days.isEmpty) return null;
+      final avg = days.values.reduce((a, b) => a + b) / days.length;
+
+      // Current day total
+      final d = filter.specificDate ?? filter.day;
+      final key = '${d.year}-${d.month}-${d.day}';
+      final current = days[key] ?? 0.0;
+
+      final diff = current - avg;
+      return AverageInsightResult(
+        average: avg,
+        current: current,
+        diff: diff,
+        isMore: diff > 0,
+        periodName: 'day',
+        hasData: true,
+      );
+    }
+
+    // ── WEEKLY ───────────────────────────────────────────────────────────────
+    case DateFilter.weekly: {
+      // Bucket by week start date
+      final Map<String, double> weeks = {};
+      for (final t in expenses) {
+        final ws = t.date.subtract(Duration(days: t.date.weekday - 1));
+        final k = '${ws.year}-${ws.month}-${ws.day}';
+        weeks[k] = (weeks[k] ?? 0) + t.amount;
+      }
+      if (weeks.isEmpty) return null;
+      final avg = weeks.values.reduce((a, b) => a + b) / weeks.length;
+
+      // Current week total
+      final ws = filter.weekStart;
+      final key = '${ws.year}-${ws.month}-${ws.day}';
+      final current = weeks[key] ?? 0.0;
+
+      final diff = current - avg;
+      return AverageInsightResult(
+        average: avg,
+        current: current,
+        diff: diff,
+        isMore: diff > 0,
+        periodName: 'week',
+        hasData: true,
+      );
+    }
+
+    // ── MONTHLY ──────────────────────────────────────────────────────────────
+    case DateFilter.monthly: {
+      final Map<String, double> months = {};
+      for (final t in expenses) {
+        final k = '${t.date.year}-${t.date.month}';
+        months[k] = (months[k] ?? 0) + t.amount;
+      }
+      if (months.isEmpty) return null;
+      final avg = months.values.reduce((a, b) => a + b) / months.length;
+
+      final key = '${filter.year}-${filter.month}';
+      final current = months[key] ?? 0.0;
+
+      final diff = current - avg;
+      return AverageInsightResult(
+        average: avg,
+        current: current,
+        diff: diff,
+        isMore: diff > 0,
+        periodName: 'month',
+        hasData: true,
+      );
+    }
+
+    // ── YEARLY ───────────────────────────────────────────────────────────────
+    case DateFilter.yearly: {
+      final Map<int, double> years = {};
+      for (final t in expenses) {
+        years[t.date.year] =
+            (years[t.date.year] ?? 0) + t.amount;
+      }
+      if (years.isEmpty) return null;
+      final avg = years.values.reduce((a, b) => a + b) / years.length;
+
+      final current = years[filter.year] ?? 0.0;
+
+      final diff = current - avg;
+      return AverageInsightResult(
+        average: avg,
+        current: current,
+        diff: diff,
+        isMore: diff > 0,
+        periodName: 'year',
+        hasData: true,
+      );
+    }
+
+    case DateFilter.overall:
+      return null;
+  }
+});

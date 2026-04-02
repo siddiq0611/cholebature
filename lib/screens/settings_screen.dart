@@ -1,9 +1,10 @@
 // lib/screens/settings_screen.dart
+// CHANGED: Feedback section now navigates to FeedbackScreen
+// instead of showing an inline card.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
 import '../models/future_transaction_model.dart';
 import '../models/security_model.dart';
@@ -16,14 +17,7 @@ import '../services/import_service.dart';
 import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import 'budget_screen.dart';
-
-// ── Replace this URL with your actual Google Form pre-fill URL ─────────────────
-// In your Google Form, get the pre-filled link for the "Rating" and "Message"
-// fields, then replace the entry IDs below.
-const _googleFormBase =
-    'https://docs.google.com/forms/d/e/YOUR_FORM_ID/formResponse';
-const _entryRating  = 'entry.000000001'; // replace with your entry ID
-const _entryMessage = 'entry.000000002'; // replace with your entry ID
+import 'feedback_screen.dart'; // NEW IMPORT
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -155,10 +149,23 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ]),
 
+                // CHANGED: Feedback is now a navigation tile, not an inline card
                 const Gap(20),
                 _SectionHeader(label: 'Feedback'),
                 const Gap(8),
-                _FeedbackCard(),
+                _Card(children: [
+                  _Tile(
+                    icon: Icons.star_rounded,
+                    iconColor: const Color(0xFFFFD700),
+                    title: 'Rate CholeBature',
+                    subtitle: 'Share your feedback and suggestions',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const FeedbackScreen()),
+                    ),
+                  ),
+                ]),
 
                 const Gap(20),
                 _SectionHeader(label: 'About'),
@@ -168,7 +175,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: context.appTextSecondary,
                     title: 'Version',
-                    subtitle: '3.4.13',
+                    subtitle: '3.4.14',
                   ),
                   _Divider(),
                   _Tile(
@@ -200,9 +207,9 @@ class SettingsScreen extends ConsumerWidget {
       };
 
   String _autoLockLabel(int s) {
-    if (s == 0)    return 'Immediately';
-    if (s < 60)    return '${s}s';
-    if (s < 3600)  return '${s ~/ 60} min';
+    if (s == 0)   return 'Immediately';
+    if (s < 60)   return '${s}s';
+    if (s < 3600) return '${s ~/ 60} min';
     return '${s ~/ 3600}h';
   }
 
@@ -222,8 +229,7 @@ class SettingsScreen extends ConsumerWidget {
     await ExportService.exportAll(
         transactions: txs, futureTransactions: fts);
     if (context.mounted) {
-      _snack(context,
-          'Saved to Downloads & share sheet opened',
+      _snack(context, 'Saved to Downloads & share sheet opened',
           color: context.appIncome, dur: 4);
     }
   }
@@ -252,7 +258,6 @@ class SettingsScreen extends ConsumerWidget {
               child: Text('Cancel',
                   style: GoogleFonts.dmSans(
                       color: context.appTextSecondary))),
-          // ── Styled Choose File button ──────────────────────────────────
           ElevatedButton.icon(
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.folder_open_rounded,
@@ -338,178 +343,6 @@ class SettingsScreen extends ConsumerWidget {
         backgroundColor: Colors.transparent,
         builder: (_) => _AutoLockSheet(current: settings.autoLockSeconds),
       );
-}
-
-// ── Feedback card ──────────────────────────────────────────────────────────────
-
-class _FeedbackCard extends StatefulWidget {
-  @override
-  State<_FeedbackCard> createState() => _FeedbackCardState();
-}
-
-class _FeedbackCardState extends State<_FeedbackCard> {
-  int _stars = 0;
-  final _msgCtrl = TextEditingController();
-  bool _sending  = false;
-
-  @override
-  void dispose() {
-    _msgCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (_stars == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Please select a star rating',
-            style: GoogleFonts.dmSans(color: Colors.white)),
-        backgroundColor: context.appBorrowed,
-        behavior: SnackBarBehavior.floating,
-      ));
-      return;
-    }
-    setState(() => _sending = true);
-
-    final ratingText = '$_stars star${_stars > 1 ? 's' : ''}';
-    final msg = _msgCtrl.text.trim();
-
-    // Build Google Form URL with pre-filled values
-    final uri = Uri.parse(_googleFormBase).replace(queryParameters: {
-      _entryRating:  ratingText,
-      _entryMessage: msg,
-    });
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {}
-
-    setState(() {
-      _sending = false;
-      _stars   = 0;
-      _msgCtrl.clear();
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Thanks for your feedback! 🙏',
-            style: GoogleFonts.dmSans(color: Colors.white)),
-        backgroundColor: context.appIncome,
-        behavior: SnackBarBehavior.floating,
-      ));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: context.appSurfaceElevated,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.appBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFD700).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.star_rounded,
-                  color: Color(0xFFFFD700), size: 20),
-            ),
-            const Gap(12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Rate CholeBature',
-                    style: GoogleFonts.dmSans(
-                        color: context.appTextPrimary,
-                        fontSize: 14, fontWeight: FontWeight.w600)),
-                Text('Your feedback helps us improve',
-                    style: GoogleFonts.dmSans(
-                        color: context.appTextMuted, fontSize: 12)),
-              ],
-            ),
-          ]),
-          const Gap(16),
-          // Star row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(5, (i) {
-              final filled = i < _stars;
-              return GestureDetector(
-                onTap: () => setState(() => _stars = i + 1),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Icon(
-                    filled ? Icons.star_rounded : Icons.star_outline_rounded,
-                    color: filled
-                        ? const Color(0xFFFFD700)
-                        : context.appTextMuted,
-                    size: 36,
-                  ),
-                ),
-              );
-            }),
-          ),
-          if (_stars > 0) ...[
-            const Gap(8),
-            Center(
-              child: Text(
-                ['', 'Poor 😞', 'Fair 😐', 'Good 🙂', 'Great 😊', 'Excellent! 🤩'][_stars],
-                style: GoogleFonts.dmSans(
-                    color: context.appTextSecondary, fontSize: 13),
-              ),
-            ),
-          ],
-          const Gap(14),
-          TextField(
-            controller: _msgCtrl,
-            maxLines: 3,
-            style: GoogleFonts.dmSans(
-                color: context.appTextPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Add a message (optional)…',
-              hintStyle: GoogleFonts.dmSans(
-                  color: context.appTextMuted, fontSize: 13),
-              prefixIcon: Icon(Icons.message_rounded,
-                  color: context.appTextMuted, size: 18),
-            ),
-          ),
-          const Gap(14),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _sending ? null : _submit,
-              icon: _sending
-                  ? const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.send_rounded,
-                      size: 16, color: Colors.white),
-              label: Text(_sending ? 'Sending…' : 'Submit Feedback',
-                  style: GoogleFonts.dmSans(
-                      color: Colors.white, fontWeight: FontWeight.w600)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: context.appAccent,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Import Preview ─────────────────────────────────────────────────────────────

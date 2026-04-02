@@ -330,11 +330,17 @@ class FutureTransactionTile extends ConsumerWidget {
             duration: 300.ms, delay: (index * 40).ms);
   }
 
+  // FIX: Use the root Navigator so the dialog doesn't get swallowed
+  // by the bottom sheet's context or the Scaffold's overlay.
   Future<void> _markDone(BuildContext context, WidgetRef ref,
       FutureTransactionNotifier notifier) async {
+    // Use rootNavigator: true so the dialog is pushed above any
+    // bottom sheets or overlays that might intercept it.
     final result =
         await showDialog<({double amount, DateTime date})>(
       context: context,
+      useRootNavigator: true,
+      barrierDismissible: true,
       builder: (ctx) => _MarkDoneDialog(ft: ft),
     );
     if (result == null) return;
@@ -347,13 +353,14 @@ class FutureTransactionTile extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _OptionsSheet(ft: ft, notifier: notifier, ref: ref),
+      useRootNavigator: true,
+      builder: (sheetCtx) =>
+          _OptionsSheet(ft: ft, notifier: notifier, ref: ref, rootContext: context),
     );
   }
 }
 
-// ── Mark Done Dialog — better button styling ───────────────────────────────────
+// ── Mark Done Dialog ───────────────────────────────────────────────────────────
 
 class _MarkDoneDialog extends StatefulWidget {
   final FutureTransaction ft;
@@ -417,7 +424,8 @@ class _MarkDoneDialogState extends State<_MarkDoneDialog> {
       ));
       return;
     }
-    Navigator.pop(context, (amount: amount, date: _date));
+    Navigator.of(context, rootNavigator: true)
+        .pop((amount: amount, date: _date));
   }
 
   @override
@@ -525,11 +533,11 @@ class _MarkDoneDialogState extends State<_MarkDoneDialog> {
         ),
       ),
       actions: [
-        // Cancel — outlined
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () =>
+                Navigator.of(context, rootNavigator: true).pop(null),
             style: OutlinedButton.styleFrom(
               foregroundColor: context.appTextSecondary,
               side: BorderSide(color: context.appBorder),
@@ -543,7 +551,6 @@ class _MarkDoneDialogState extends State<_MarkDoneDialog> {
           ),
         ),
         const Gap(10),
-        // Record Transaction — filled green
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
@@ -576,8 +583,15 @@ class _OptionsSheet extends ConsumerWidget {
   final FutureTransaction ft;
   final FutureTransactionNotifier notifier;
   final WidgetRef ref;
-  const _OptionsSheet(
-      {required this.ft, required this.notifier, required this.ref});
+  // FIX: store the root context so Mark Done dialog can use it
+  final BuildContext rootContext;
+
+  const _OptionsSheet({
+    required this.ft,
+    required this.notifier,
+    required this.ref,
+    required this.rootContext,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef widgetRef) {
@@ -613,10 +627,14 @@ class _OptionsSheet extends ConsumerWidget {
             label: 'Mark as Done',
             color: context.appIncome,
             onTap: () async {
-              Navigator.pop(context);
+              // Close the bottom sheet first
+              Navigator.of(context).pop();
+              // FIX: Show dialog using rootContext so it's above everything
               final result =
                   await showDialog<({double amount, DateTime date})>(
-                context: context,
+                context: rootContext,
+                useRootNavigator: true,
+                barrierDismissible: true,
                 builder: (_) => _MarkDoneDialog(ft: ft),
               );
               if (result != null) {
@@ -653,7 +671,7 @@ class _OptionsSheet extends ConsumerWidget {
             onTap: () {
               Navigator.pop(context);
               showModalBottomSheet(
-                context: context,
+                context: rootContext,
                 isScrollControlled: true,
                 backgroundColor: Colors.transparent,
                 builder: (_) =>

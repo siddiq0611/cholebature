@@ -1,4 +1,3 @@
-// lib/services/security_service.dart
 // Biometric REMOVED completely.
 
 import 'dart:convert';

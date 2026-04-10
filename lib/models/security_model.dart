@@ -1,6 +1,3 @@
-// lib/models/security_model.dart
-// Biometric REMOVED
-
 enum LockType { none, pin, password }
 
 class SecuritySettings {

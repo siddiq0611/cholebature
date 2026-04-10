@@ -263,7 +263,6 @@ class BorrowLendTile extends ConsumerWidget {
 
   void _showDetailSheet(BuildContext context) {
     final tx = entry.transaction;
-    final color = entry.isBorrowed ? context.appBorrowed : context.appLend;
     final prefix = entry.isBorrowed ? '~' : '+';
 
     showModalBottomSheet(

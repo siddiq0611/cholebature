@@ -1,5 +1,3 @@
-// lib/services/export_service.dart
-//
 // Single CSV export containing ALL data:
 //   DataType | ID | Date/NextDue | Title | Type | Category | Amount | Note | ExtraJson
 //

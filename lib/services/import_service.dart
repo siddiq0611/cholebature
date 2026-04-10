@@ -1,5 +1,3 @@
-// lib/services/import_service.dart
-//
 // Imports from the unified single-CSV format produced by ExportService.
 // Also still handles old-style transaction-only CSVs for backwards compat.
 //
@@ -10,7 +8,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../models/transaction_model.dart';
 import '../models/future_transaction_model.dart';
-import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
 
 class ImportResult {

@@ -1,31 +1,3 @@
-// lib/services/notification_service.dart
-//
-// REAL notification scheduling using flutter_local_notifications.
-// Notifications fire at the exact time set (nextDue - reminderOffset).
-//
-// IMPORTANT — pubspec.yaml must have:
-//   flutter_local_notifications: ^17.x.x
-//
-// android/app/src/main/AndroidManifest.xml must have inside <manifest>:
-//   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-//   <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>  <!-- API 33+ -->
-//   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-//
-// and inside <application>:
-//   <receiver android:exported="false"
-//       android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver">
-//       <intent-filter>
-//           <action android:name="com.dexterous.flutterlocalnotifications.NOTIFICATION_SCHEDULED"/>
-//       </intent-filter>
-//   </receiver>
-//   <receiver android:exported="false"
-//       android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
-//       <intent-filter>
-//           <action android:name="android.intent.action.BOOT_COMPLETED"/>
-//           <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
-//       </intent-filter>
-//   </receiver>
-
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz;

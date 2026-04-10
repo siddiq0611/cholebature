@@ -1,4 +1,3 @@
-// lib/services/database_service.dart
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import 'package:path/path.dart';
 import '../models/transaction_model.dart';

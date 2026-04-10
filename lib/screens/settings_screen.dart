@@ -1,6 +1,3 @@
-// lib/screens/settings_screen.dart
-// Biometric REMOVED from _SetLockSheet and everywhere else.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -14,7 +11,6 @@ import '../providers/security_provider.dart';
 import '../providers/transaction_provider.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
-import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import 'budget_screen.dart';
 import 'feedback_screen.dart';
@@ -46,7 +42,7 @@ class SettingsScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                _SectionHeader(label: 'Appearance'),
+                const _SectionHeader(label: 'Appearance'),
                 const Gap(8),
                 _Card(children: [
                   _Tile(
@@ -62,7 +58,7 @@ class SettingsScreen extends ConsumerWidget {
                 ]),
 
                 const Gap(20),
-                _SectionHeader(label: 'Security'),
+                const _SectionHeader(label: 'Security'),
                 const Gap(8),
                 _Card(children: [
                   _Tile(
@@ -83,7 +79,7 @@ class SettingsScreen extends ConsumerWidget {
                               .disable();
                         }
                       },
-                      activeColor: context.appAccent,
+                      activeThumbColor: context.appAccent,
                     ),
                   ),
                   if (secSettings.enabled) ...[
@@ -107,7 +103,7 @@ class SettingsScreen extends ConsumerWidget {
                 ]),
 
                 const Gap(20),
-                _SectionHeader(label: 'Finance'),
+                const _SectionHeader(label: 'Finance'),
                 const Gap(8),
                 _Card(children: [
                   _Tile(
@@ -122,7 +118,7 @@ class SettingsScreen extends ConsumerWidget {
                 ]),
 
                 const Gap(20),
-                _SectionHeader(label: 'Data'),
+                const _SectionHeader(label: 'Data'),
                 const Gap(8),
                 _Card(children: [
                   _Tile(
@@ -143,7 +139,7 @@ class SettingsScreen extends ConsumerWidget {
                 ]),
 
                 const Gap(20),
-                _SectionHeader(label: 'Feedback'),
+                const _SectionHeader(label: 'Feedback'),
                 const Gap(8),
                 _Card(children: [
                   _Tile(
@@ -159,7 +155,7 @@ class SettingsScreen extends ConsumerWidget {
                 ]),
 
                 const Gap(20),
-                _SectionHeader(label: 'About'),
+                const _SectionHeader(label: 'About'),
                 const Gap(8),
                 _Card(children: [
                   _Tile(

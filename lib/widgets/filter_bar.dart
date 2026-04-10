@@ -323,17 +323,6 @@ class FilterBar extends ConsumerWidget {
     }
   }
 
-  Future<void> _pickSpecificDate(
-      BuildContext context, FilterNotifier notifier) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) notifier.setSpecificDate(picked);
-  }
-
   void _showAdvancedFilters(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
@@ -386,11 +375,6 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
   final int _minYear = 2020;
   final int _maxYear = DateTime.now().year;
 
-  static const _monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ];
-
   static const _monthShort = [
     'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -407,8 +391,6 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
     if (_year < DateTime.now().year) return true;
     return m <= DateTime.now().month;
   }
-
-  bool _isYearSelectable(int y) => y <= _maxYear && y >= _minYear;
 
   @override
   Widget build(BuildContext context) {
@@ -486,7 +468,6 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                 itemCount: 12,
                 itemBuilder: (_, i) {
                   final m = i + 1;
-                  final isSelected = m == _month && _year == widget.initialYear;
                   final selectable = _isMonthSelectable(m);
                   return GestureDetector(
                     onTap: selectable

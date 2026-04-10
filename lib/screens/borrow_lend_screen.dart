@@ -1,4 +1,3 @@
-// lib/screens/borrow_lend_screen.dart
 import 'package:chole_bature/models/transaction_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -78,12 +77,16 @@ class BorrowLendScreen extends ConsumerWidget {
               // Flatten for pagination: borrow section then lend section
               final allEntries = <_SectionedEntry>[];
               if (borrowed.isNotEmpty) {
-                allEntries.add(_SectionedEntry.borrowedHeader());
-                for (final e in borrowed) allEntries.add(_SectionedEntry.entry(e));
+                allEntries.add(const _SectionedEntry.borrowedHeader());
+                for (final e in borrowed) {
+                  allEntries.add(_SectionedEntry.entry(e));
+                }
               }
               if (lent.isNotEmpty) {
-                allEntries.add(_SectionedEntry.lentHeader());
-                for (final e in lent) allEntries.add(_SectionedEntry.entry(e));
+                allEntries.add(const _SectionedEntry.lentHeader());
+                for (final e in lent) {
+                  allEntries.add(_SectionedEntry.entry(e));
+                }
               }
 
               // Count only entry items for pagination

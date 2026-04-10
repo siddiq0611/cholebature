@@ -1,6 +1,3 @@
-// lib/providers/security_provider.dart
-// Biometric REMOVED.
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/security_model.dart';
 import '../services/security_service.dart';

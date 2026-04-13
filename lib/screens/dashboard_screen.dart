@@ -1,5 +1,4 @@
-// lib/screens/dashboard_screen.dart
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide DateRangePickerDialog;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -44,7 +43,6 @@ class DashboardScreen extends ConsumerWidget {
             actions: [
               GestureDetector(
                 onTap: () {
-                  // Use the new ThemeModeNotifier.cycle() which persists
                   ref.read(themeModeProvider.notifier).cycle();
                 },
                 child: Container(
@@ -75,20 +73,13 @@ class DashboardScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // ── Period filter tabs ─────────────────────────────────────
                 _PeriodFilterBar(filter: filter, notifier: notifier),
                 const Gap(12),
-
-                // ── Period label + nav ─────────────────────────────────────
                 if (filter.filter != DateFilter.overall)
                   _PeriodNav(filter: filter, notifier: notifier),
                 if (filter.filter != DateFilter.overall) const Gap(12),
-
-                // ── Average insight ────────────────────────────────────────
                 const _AverageInsightCard(),
                 const Gap(16),
-
-                // ── Summary cards ──────────────────────────────────────────
                 SummaryCards(
                   income: summary.income,
                   expense: summary.expense,
@@ -113,7 +104,7 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-// ── Period filter tabs ─────────────────────────────────────────────────────────
+// ─── Period filter tabs ────────────────────────────────────────────────────────
 
 class _PeriodFilterBar extends StatelessWidget {
   final FilterState filter;
@@ -126,6 +117,7 @@ class _PeriodFilterBar extends StatelessWidget {
     DateFilter.monthly: 'Month',
     DateFilter.yearly: 'Year',
     DateFilter.overall: 'All',
+    DateFilter.range: 'Range',
   };
 
   @override
@@ -137,7 +129,13 @@ class _PeriodFilterBar extends StatelessWidget {
           final selected = filter.filter == f;
           final accent = context.appAccent;
           return GestureDetector(
-            onTap: () => notifier.setFilter(f),
+            onTap: () {
+              if (f == DateFilter.range) {
+                _openRangePicker(context);
+              } else {
+                notifier.setFilter(f);
+              }
+            },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               margin: const EdgeInsets.only(right: 8),
@@ -165,9 +163,22 @@ class _PeriodFilterBar extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _openRangePicker(BuildContext context) async {
+    final result = await showDialog<(DateTime, DateTime)>(
+      context: context,
+      builder: (_) => DateRangePickerDialog(
+        initialStart: filter.rangeStart,
+        initialEnd: filter.rangeEnd,
+      ),
+    );
+    if (result != null) {
+      notifier.setCustomRange(result.$1, result.$2);
+    }
+  }
 }
 
-// ── Period navigator (prev / label / next) ────────────────────────────────────
+// ─── Period navigator ──────────────────────────────────────────────────────────
 
 class _PeriodNav extends StatelessWidget {
   final FilterState filter;
@@ -201,6 +212,11 @@ class _PeriodNav extends StatelessWidget {
         return '${filter.year}';
       case DateFilter.overall:
         return '';
+      case DateFilter.range:
+        if (filter.rangeStart != null && filter.rangeEnd != null) {
+          return '${filter.rangeStart!.day} ${_monthShort(filter.rangeStart!.month)} – ${filter.rangeEnd!.day} ${_monthShort(filter.rangeEnd!.month)} ${filter.rangeEnd!.year}';
+        }
+        return 'Custom range';
     }
   }
 
@@ -248,6 +264,17 @@ class _PeriodNav extends StatelessWidget {
         if (picked != null) notifier.setYearValue(picked.year);
         break;
 
+      case DateFilter.range:
+        final result = await showDialog<(DateTime, DateTime)>(
+          context: context,
+          builder: (_) => DateRangePickerDialog(
+            initialStart: filter.rangeStart,
+            initialEnd: filter.rangeEnd,
+          ),
+        );
+        if (result != null) notifier.setCustomRange(result.$1, result.$2);
+        break;
+
       case DateFilter.overall:
         break;
     }
@@ -255,11 +282,15 @@ class _PeriodNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showChevrons = filter.filter != DateFilter.range;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _Chevron(icon: Icons.chevron_left_rounded, onTap: notifier.previous),
-        const Gap(16),
+        if (showChevrons)
+          _Chevron(
+              icon: Icons.chevron_left_rounded, onTap: notifier.previous),
+        if (showChevrons) const Gap(16),
         GestureDetector(
           onTap: () => _openPicker(context),
           child: Row(
@@ -280,8 +311,37 @@ class _PeriodNav extends StatelessWidget {
             ],
           ),
         ),
-        const Gap(16),
-        _Chevron(icon: Icons.chevron_right_rounded, onTap: notifier.next),
+        if (showChevrons) const Gap(16),
+        if (showChevrons)
+          _Chevron(
+              icon: Icons.chevron_right_rounded, onTap: notifier.next),
+        if (filter.filter == DateFilter.range) ...[
+          const Gap(8),
+          GestureDetector(
+            onTap: () => notifier.clearCustomRange(),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: context.appExpense.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.close_rounded,
+                      size: 12, color: context.appExpense),
+                  const Gap(3),
+                  Text(
+                    'Clear',
+                    style: GoogleFonts.dmSans(
+                        color: context.appExpense, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -366,7 +426,6 @@ class _DashMonthYearPickerDialogState
                   fontWeight: FontWeight.w700),
             ),
             const Gap(16),
-            // Year navigator
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -412,8 +471,9 @@ class _DashMonthYearPickerDialogState
                   final m = i + 1;
                   final selectable = _isMonthSelectable(m);
                   return GestureDetector(
-                    onTap:
-                        selectable ? () => setState(() => _month = m) : null,
+                    onTap: selectable
+                        ? () => setState(() => _month = m)
+                        : null,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       decoration: BoxDecoration(
@@ -568,7 +628,7 @@ class _Chevron extends StatelessWidget {
       );
 }
 
-// ── Average insight card ───────────────────────────────────────────────────────
+// ─── Average insight card ──────────────────────────────────────────────────────
 
 class _AverageInsightCard extends ConsumerWidget {
   const _AverageInsightCard();
@@ -576,7 +636,10 @@ class _AverageInsightCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final filter = ref.watch(filterProvider);
-    if (filter.filter == DateFilter.overall) return const SizedBox.shrink();
+    if (filter.filter == DateFilter.overall ||
+        filter.filter == DateFilter.range) {
+      return const SizedBox.shrink();
+    }
 
     final insightAsync = ref.watch(averageInsightProvider);
 
@@ -649,7 +712,7 @@ class _AverageInsightCard extends ConsumerWidget {
   }
 }
 
-// ── Add button ─────────────────────────────────────────────────────────────────
+// ─── Add button ────────────────────────────────────────────────────────────────
 
 class _AddButton extends StatelessWidget {
   @override
@@ -661,7 +724,8 @@ class _AddButton extends StatelessWidget {
           builder: (_) => const AddTransactionSheet(),
         ),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: context.appAccent,
             borderRadius: BorderRadius.circular(10),
@@ -682,12 +746,13 @@ class _AddButton extends StatelessWidget {
       );
 }
 
-// ── Category breakdown ─────────────────────────────────────────────────────────
+// ─── Category breakdown ────────────────────────────────────────────────────────
 
 class _CategoryBreakdownList extends StatelessWidget {
   final Map data;
   final double total;
-  const _CategoryBreakdownList({required this.data, required this.total});
+  const _CategoryBreakdownList(
+      {required this.data, required this.total});
 
   @override
   Widget build(BuildContext context) {

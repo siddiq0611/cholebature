@@ -4,7 +4,7 @@ import '../models/budget_model.dart';
 import '../services/database_service.dart';
 
 // ─── Date Filter ───────────────────────────────────────────────────────────────
-enum DateFilter { daily, weekly, monthly, yearly, overall }
+enum DateFilter { daily, weekly, monthly, yearly, overall, range }
 
 DateTime _weekStart(DateTime date) =>
     DateTime(date.year, date.month, date.day - (date.weekday - 1));
@@ -16,17 +16,17 @@ class FilterState {
   final DateTime weekStart;
   final DateTime day;
 
-  // Advanced filters
   final Set<TransactionCategory> selectedCategories;
   final DateTime? specificDate;
   final SortOption sortBy;
 
-  // ── NEW: calendar-picked period overrides ──────────────────────────────────
-  // When the user picks a specific month/year/week from a calendar picker,
-  // we store it here so the label & query reflect the picked value.
-  final DateTime? pickedMonth; // used when filter == monthly
-  final DateTime? pickedYear;  // used when filter == yearly
-  final DateTime? pickedWeek;  // week-start when filter == weekly
+  final DateTime? pickedMonth;
+  final DateTime? pickedYear;
+  final DateTime? pickedWeek;
+
+  // Custom range
+  final DateTime? rangeStart;
+  final DateTime? rangeEnd;
 
   FilterState({
     this.filter = DateFilter.monthly,
@@ -40,10 +40,14 @@ class FilterState {
     this.pickedMonth,
     this.pickedYear,
     this.pickedWeek,
+    this.rangeStart,
+    this.rangeEnd,
   });
 
   bool get hasActiveFilters =>
       selectedCategories.isNotEmpty || specificDate != null;
+
+  bool get hasCustomRange => rangeStart != null && rangeEnd != null;
 
   FilterState copyWith({
     DateFilter? filter,
@@ -61,6 +65,10 @@ class FilterState {
     bool clearPickedYear = false,
     DateTime? pickedWeek,
     bool clearPickedWeek = false,
+    DateTime? rangeStart,
+    bool clearRangeStart = false,
+    DateTime? rangeEnd,
+    bool clearRangeEnd = false,
   }) =>
       FilterState(
         filter: filter ?? this.filter,
@@ -68,17 +76,16 @@ class FilterState {
         month: month ?? this.month,
         weekStart: weekStart ?? this.weekStart,
         day: day ?? this.day,
-        selectedCategories:
-            selectedCategories ?? this.selectedCategories,
+        selectedCategories: selectedCategories ?? this.selectedCategories,
         specificDate:
             clearSpecificDate ? null : (specificDate ?? this.specificDate),
         sortBy: sortBy ?? this.sortBy,
         pickedMonth:
             clearPickedMonth ? null : (pickedMonth ?? this.pickedMonth),
-        pickedYear:
-            clearPickedYear ? null : (pickedYear ?? this.pickedYear),
-        pickedWeek:
-            clearPickedWeek ? null : (pickedWeek ?? this.pickedWeek),
+        pickedYear: clearPickedYear ? null : (pickedYear ?? this.pickedYear),
+        pickedWeek: clearPickedWeek ? null : (pickedWeek ?? this.pickedWeek),
+        rangeStart: clearRangeStart ? null : (rangeStart ?? this.rangeStart),
+        rangeEnd: clearRangeEnd ? null : (rangeEnd ?? this.rangeEnd),
       );
 }
 
@@ -122,18 +129,11 @@ class FilterNotifier extends StateNotifier<FilterState> {
         sortBy: SortOption.dateNewest,
       );
 
-  // ── Calendar-picker helpers ────────────────────────────────────────────────
-
-  /// Jump to a specific day (daily filter).
   void setDay(DateTime day) {
     final d = DateTime(day.year, day.month, day.day);
-    state = state.copyWith(
-      day: d,
-      filter: DateFilter.daily,
-    );
+    state = state.copyWith(day: d, filter: DateFilter.daily);
   }
 
-  /// Jump to a specific week (weekly filter).
   void setWeekFromDate(DateTime date) {
     final ws = _weekStart(date);
     state = state.copyWith(
@@ -143,7 +143,6 @@ class FilterNotifier extends StateNotifier<FilterState> {
     );
   }
 
-  /// Jump to a specific month (monthly filter).
   void setMonthFromDate(DateTime date) {
     state = state.copyWith(
       year: date.year,
@@ -153,12 +152,27 @@ class FilterNotifier extends StateNotifier<FilterState> {
     );
   }
 
-  /// Jump to a specific year (yearly filter).
   void setYearValue(int year) {
     state = state.copyWith(
       year: year,
       filter: DateFilter.yearly,
       pickedYear: DateTime(year),
+    );
+  }
+
+  void setCustomRange(DateTime start, DateTime end) {
+    state = state.copyWith(
+      rangeStart: DateTime(start.year, start.month, start.day),
+      rangeEnd: DateTime(end.year, end.month, end.day, 23, 59, 59),
+      filter: DateFilter.range,
+    );
+  }
+
+  void clearCustomRange() {
+    state = state.copyWith(
+      clearRangeStart: true,
+      clearRangeEnd: true,
+      filter: DateFilter.monthly,
     );
   }
 
@@ -177,6 +191,7 @@ class FilterNotifier extends StateNotifier<FilterState> {
     } else if (state.filter == DateFilter.yearly) {
       state = state.copyWith(year: state.year - 1, clearPickedYear: true);
     }
+    // range: no-op
   }
 
   void next() {
@@ -201,8 +216,7 @@ class FilterNotifier extends StateNotifier<FilterState> {
       } else {
         final nextMonth = state.month + 1;
         if (state.year < now.year || nextMonth <= now.month) {
-          state =
-              state.copyWith(month: nextMonth, clearPickedMonth: true);
+          state = state.copyWith(month: nextMonth, clearPickedMonth: true);
         }
       }
     } else if (state.filter == DateFilter.yearly) {
@@ -210,6 +224,7 @@ class FilterNotifier extends StateNotifier<FilterState> {
         state = state.copyWith(year: state.year + 1, clearPickedYear: true);
       }
     }
+    // range: no-op
   }
 }
 
@@ -262,6 +277,16 @@ class TransactionNotifier
             break;
           case DateFilter.overall:
             txs = await _db.getAllTransactions();
+            break;
+          case DateFilter.range:
+            if (filter.rangeStart != null && filter.rangeEnd != null) {
+              txs = await _db.getTransactionsByDateRange(
+                filter.rangeStart!,
+                filter.rangeEnd!.add(const Duration(seconds: 1)),
+              );
+            } else {
+              txs = await _db.getAllTransactions();
+            }
             break;
         }
       }
@@ -317,18 +342,13 @@ class TransactionNotifier
 }
 
 // ─── Summary ───────────────────────────────────────────────────────────────────
-final summaryProvider = Provider<
-    ({
-      double income,
-      double expense,
-      double savings,
-      double borrowed,
-      double lent
-    })>((ref) {
+final summaryProvider = Provider((ref) {
   final txAsync = ref.watch(transactionListProvider);
+
   return txAsync.when(
     data: (txs) {
       double income = 0, expense = 0, borrowed = 0, lent = 0;
+
       for (final t in txs) {
         switch (t.type) {
           case TransactionType.income:
@@ -345,6 +365,7 @@ final summaryProvider = Provider<
             break;
         }
       }
+
       return (
         income: income,
         expense: expense,
@@ -353,10 +374,20 @@ final summaryProvider = Provider<
         lent: lent,
       );
     },
-    loading: () =>
-        (income: 0, expense: 0, savings: 0, borrowed: 0, lent: 0),
-    error: (_, __) =>
-        (income: 0, expense: 0, savings: 0, borrowed: 0, lent: 0),
+    loading: () => (
+      income: 0.0,
+      expense: 0.0,
+      savings: 0.0,
+      borrowed: 0.0,
+      lent: 0.0,
+    ),
+    error: (_, __) => (
+      income: 0.0,
+      expense: 0.0,
+      savings: 0.0,
+      borrowed: 0.0,
+      lent: 0.0,
+    ),
   );
 });
 
@@ -562,7 +593,8 @@ class AverageInsightResult {
 final averageInsightProvider =
     FutureProvider<AverageInsightResult?>((ref) async {
   final filter = ref.watch(filterProvider);
-  if (filter.filter == DateFilter.overall) return null;
+  if (filter.filter == DateFilter.overall ||
+      filter.filter == DateFilter.range) return null;
 
   final db = DatabaseService();
   final allTxs = await db.getAllTransactions();
@@ -587,8 +619,12 @@ final averageInsightProvider =
         final current = days[key] ?? 0.0;
         final diff = current - avg;
         return AverageInsightResult(
-          average: avg, current: current, diff: diff,
-          isMore: diff > 0, periodName: 'day', hasData: true,
+          average: avg,
+          current: current,
+          diff: diff,
+          isMore: diff > 0,
+          periodName: 'day',
+          hasData: true,
         );
       }
 
@@ -608,8 +644,12 @@ final averageInsightProvider =
         final current = weeks[key] ?? 0.0;
         final diff = current - avg;
         return AverageInsightResult(
-          average: avg, current: current, diff: diff,
-          isMore: diff > 0, periodName: 'week', hasData: true,
+          average: avg,
+          current: current,
+          diff: diff,
+          isMore: diff > 0,
+          periodName: 'week',
+          hasData: true,
         );
       }
 
@@ -627,8 +667,12 @@ final averageInsightProvider =
         final current = months[key] ?? 0.0;
         final diff = current - avg;
         return AverageInsightResult(
-          average: avg, current: current, diff: diff,
-          isMore: diff > 0, periodName: 'month', hasData: true,
+          average: avg,
+          current: current,
+          diff: diff,
+          isMore: diff > 0,
+          periodName: 'month',
+          hasData: true,
         );
       }
 
@@ -643,12 +687,17 @@ final averageInsightProvider =
         final current = years[filter.year] ?? 0.0;
         final diff = current - avg;
         return AverageInsightResult(
-          average: avg, current: current, diff: diff,
-          isMore: diff > 0, periodName: 'year', hasData: true,
+          average: avg,
+          current: current,
+          diff: diff,
+          isMore: diff > 0,
+          periodName: 'year',
+          hasData: true,
         );
       }
 
     case DateFilter.overall:
+    case DateFilter.range:
       return null;
   }
 });

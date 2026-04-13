@@ -39,6 +39,10 @@ class TransactionsScreen extends ConsumerWidget {
             padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
             sliver: SliverToBoxAdapter(child: FilterBar()),
           ),
+          const SliverPadding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+            sliver: SliverToBoxAdapter(child: _SummaryBar()),
+          ),
           txAsync.when(
             loading: () => SliverFillRemaining(
               child: Center(
@@ -59,7 +63,6 @@ class TransactionsScreen extends ConsumerWidget {
                 return SliverFillRemaining(child: _EmptyState());
               }
 
-              // Group all transactions by date
               final grouped = <String, List<Transaction>>{};
               for (final t in txs) {
                 final key = formatDate(t.date);
@@ -87,7 +90,8 @@ class TransactionsScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 10),
                             child: Row(
                               children: [
                                 Text(
@@ -115,7 +119,8 @@ class TransactionsScreen extends ConsumerWidget {
                           ),
                           ...dayTxs.asMap().entries.map(
                                 (entry) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
+                                  padding:
+                                      const EdgeInsets.only(bottom: 8),
                                   child: TransactionTile(
                                     transaction: entry.value,
                                     index: entry.key,
@@ -139,6 +144,128 @@ class TransactionsScreen extends ConsumerWidget {
   }
 }
 
+// ─── Summary bar ───────────────────────────────────────────────────────────────
+
+class _SummaryBar extends ConsumerWidget {
+  const _SummaryBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summary = ref.watch(summaryProvider);
+
+    if (summary.income == 0 &&
+        summary.expense == 0 &&
+        summary.borrowed == 0 &&
+        summary.lent == 0) {
+      return const SizedBox.shrink();
+    }
+
+    final showBorrowLend = summary.borrowed > 0 || summary.lent > 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.appSurfaceElevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.appBorder),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _SummaryItem(
+              label: 'Spent',
+              value: summary.expense,
+              color: context.appExpense,
+            ),
+          ),
+          _VerticalDivider(),
+          Expanded(
+            child: _SummaryItem(
+              label: 'Income',
+              value: summary.income,
+              color: context.appIncome,
+            ),
+          ),
+          _VerticalDivider(),
+          Expanded(
+            child: _SummaryItem(
+              label: 'Savings',
+              value: summary.savings,
+              color: summary.savings >= 0
+                  ? context.appIncome
+                  : context.appExpense,
+            ),
+          ),
+          if (showBorrowLend) ...[
+            _VerticalDivider(),
+            Expanded(
+              child: _SummaryItem(
+                label: 'Net B/L',
+                value: summary.borrowed - summary.lent,
+                color: context.appBorrowed,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryItem extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _SummaryItem({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            color: context.appTextMuted,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const Gap(3),
+        Text(
+          formatCompact(value.abs()),
+          style: GoogleFonts.dmSans(
+            color: color,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VerticalDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 28,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      color: context.appBorder,
+    );
+  }
+}
+
+// ─── Empty state ───────────────────────────────────────────────────────────────
+
 class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -146,7 +273,8 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.receipt_long_rounded, size: 60, color: context.appTextMuted),
+          Icon(Icons.receipt_long_rounded,
+              size: 60, color: context.appTextMuted),
           const Gap(16),
           Text(
             'No transactions yet',
@@ -159,7 +287,8 @@ class _EmptyState extends StatelessWidget {
           const Gap(6),
           Text(
             'Tap + to record your first transaction',
-            style: GoogleFonts.dmSans(color: context.appTextMuted, fontSize: 13),
+            style: GoogleFonts.dmSans(
+                color: context.appTextMuted, fontSize: 13),
           ),
         ],
       ),

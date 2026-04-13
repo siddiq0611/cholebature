@@ -1,4 +1,3 @@
-// lib/widgets/filter_bar.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -17,6 +16,7 @@ class FilterBar extends ConsumerWidget {
     DateFilter.monthly: 'Month',
     DateFilter.yearly: 'Year',
     DateFilter.overall: 'All',
+    DateFilter.range: 'Range',
   };
 
   String _weekLabel(DateTime start) {
@@ -31,6 +31,9 @@ class FilterBar extends ConsumerWidget {
         'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
       ][m - 1];
+
+  String _fmtShort(DateTime d) =>
+      '${d.day} ${_monthShort(d.month)} ${d.year}';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,11 +61,19 @@ class FilterBar extends ConsumerWidget {
           return formatYear(filter.year);
         case DateFilter.overall:
           return '';
+        case DateFilter.range:
+          if (filter.rangeStart != null && filter.rangeEnd != null) {
+            return '${_fmtShort(filter.rangeStart!)} – ${_fmtShort(filter.rangeEnd!)}';
+          }
+          return 'Custom range';
       }
     }
 
     final hasAdvancedFilters =
         filter.hasActiveFilters || filter.sortBy != SortOption.dateNewest;
+
+    final showNavRow = filter.filter != DateFilter.overall;
+    final showChevrons = filter.filter != DateFilter.range;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -76,7 +87,13 @@ class FilterBar extends ConsumerWidget {
                   children: DateFilter.values.map((f) {
                     final selected = filter.filter == f;
                     return GestureDetector(
-                      onTap: () => notifier.setFilter(f),
+                      onTap: () {
+                        if (f == DateFilter.range) {
+                          _openRangePicker(context, filter, notifier);
+                        } else {
+                          notifier.setFilter(f);
+                        }
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         margin: const EdgeInsets.only(right: 8),
@@ -109,7 +126,6 @@ class FilterBar extends ConsumerWidget {
                 ),
               ),
             ),
-            // Advanced filters button
             GestureDetector(
               onTap: () => _showAdvancedFilters(context, ref),
               child: AnimatedContainer(
@@ -122,33 +138,33 @@ class FilterBar extends ConsumerWidget {
                       : context.appSurfaceElevated,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color:
-                        hasAdvancedFilters ? accent : context.appBorder,
+                    color: hasAdvancedFilters ? accent : context.appBorder,
                     width: hasAdvancedFilters ? 1.5 : 1,
                   ),
                 ),
                 child: Icon(
                   Icons.tune_rounded,
-                  color: hasAdvancedFilters ? accent : context.appTextMuted,
+                  color:
+                      hasAdvancedFilters ? accent : context.appTextMuted,
                   size: 18,
                 ),
               ),
             ),
           ],
         ),
-        if (filter.filter != DateFilter.overall ||
-            filter.specificDate != null) ...[
+        if (showNavRow) ...[
           const Gap(12),
           Row(
             children: [
-              _NavButton(
-                icon: Icons.chevron_left_rounded,
-                onTap: () => notifier.previous(),
-              ),
-              const Gap(10),
-              // ── Tappable period label — opens calendar picker ────────────
+              if (showChevrons)
+                _NavButton(
+                  icon: Icons.chevron_left_rounded,
+                  onTap: () => notifier.previous(),
+                ),
+              if (showChevrons) const Gap(10),
               GestureDetector(
-                onTap: () => _openCalendarPicker(context, filter, notifier),
+                onTap: () =>
+                    _openCalendarPicker(context, filter, notifier),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -167,11 +183,42 @@ class FilterBar extends ConsumerWidget {
                   ],
                 ),
               ),
-              const Gap(10),
-              _NavButton(
-                icon: Icons.chevron_right_rounded,
-                onTap: () => notifier.next(),
-              ),
+              if (showChevrons) const Gap(10),
+              if (showChevrons)
+                _NavButton(
+                  icon: Icons.chevron_right_rounded,
+                  onTap: () => notifier.next(),
+                ),
+              if (filter.filter == DateFilter.range) ...[
+                const Gap(8),
+                GestureDetector(
+                  onTap: () => notifier.clearCustomRange(),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color:
+                          context.appExpense.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.close_rounded,
+                            size: 12, color: context.appExpense),
+                        const Gap(3),
+                        Text(
+                          'Clear',
+                          style: GoogleFonts.dmSans(
+                            color: context.appExpense,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               if (filter.specificDate != null) ...[
                 const Gap(8),
                 GestureDetector(
@@ -180,7 +227,8 @@ class FilterBar extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: context.appExpense.withValues(alpha: 0.12),
+                      color:
+                          context.appExpense.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Row(
@@ -204,7 +252,6 @@ class FilterBar extends ConsumerWidget {
             ],
           ),
         ],
-        // Active filter chips row
         if (filter.selectedCategories.isNotEmpty ||
             filter.sortBy != SortOption.dateNewest) ...[
           const Gap(8),
@@ -256,7 +303,20 @@ class FilterBar extends ConsumerWidget {
     );
   }
 
-  // ── Calendar picker — opens the right picker for each filter mode ──────────
+  Future<void> _openRangePicker(BuildContext context, FilterState filter,
+      FilterNotifier notifier) async {
+    final result = await showDialog<(DateTime, DateTime)>(
+      context: context,
+      builder: (_) => DateRangePickerDialog(
+        initialStart: filter.rangeStart,
+        initialEnd: filter.rangeEnd,
+      ),
+    );
+    if (result != null) {
+      notifier.setCustomRange(result.$1, result.$2);
+    }
+  }
+
   Future<void> _openCalendarPicker(BuildContext context, FilterState filter,
       FilterNotifier notifier) async {
     switch (filter.filter) {
@@ -272,7 +332,6 @@ class FilterBar extends ConsumerWidget {
         break;
 
       case DateFilter.weekly:
-        // Show date picker; then snap to week start
         final picked = await showDatePicker(
           context: context,
           initialDate: filter.weekStart,
@@ -284,7 +343,6 @@ class FilterBar extends ConsumerWidget {
         break;
 
       case DateFilter.monthly:
-        // Show a month picker dialog
         final picked = await _showMonthYearPicker(
           context: context,
           initialYear: filter.year,
@@ -304,8 +362,11 @@ class FilterBar extends ConsumerWidget {
         if (picked != null) notifier.setYearValue(picked.year);
         break;
 
+      case DateFilter.range:
+        await _openRangePicker(context, filter, notifier);
+        break;
+
       case DateFilter.overall:
-        // Nothing to pick
         break;
     }
   }
@@ -333,7 +394,7 @@ class FilterBar extends ConsumerWidget {
   }
 }
 
-// ── Month/Year picker dialog ───────────────────────────────────────────────────
+// ─── Month/Year picker ─────────────────────────────────────────────────────────
 
 enum _PickerMode { month, year }
 
@@ -405,7 +466,6 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
             Text(
               isMonthMode ? 'Select Month' : 'Select Year',
               style: GoogleFonts.dmSans(
@@ -414,8 +474,6 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                   fontWeight: FontWeight.w700),
             ),
             const Gap(16),
-
-            // Year navigator (always shown)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -428,17 +486,12 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                           ? context.appTextPrimary
                           : context.appTextMuted),
                 ),
-                GestureDetector(
-                  onTap: isMonthMode
-                      ? null
-                      : null, // year mode shows year prominently
-                  child: Text(
-                    '$_year',
-                    style: GoogleFonts.dmSans(
-                        color: context.appTextPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700),
-                  ),
+                Text(
+                  '$_year',
+                  style: GoogleFonts.dmSans(
+                      color: context.appTextPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700),
                 ),
                 IconButton(
                   onPressed: _year < _maxYear
@@ -451,10 +504,8 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                 ),
               ],
             ),
-
             if (isMonthMode) ...[
               const Gap(8),
-              // Month grid
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -470,9 +521,8 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                   final m = i + 1;
                   final selectable = _isMonthSelectable(m);
                   return GestureDetector(
-                    onTap: selectable
-                        ? () => setState(() => _month = m)
-                        : null,
+                    onTap:
+                        selectable ? () => setState(() => _month = m) : null,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       decoration: BoxDecoration(
@@ -507,7 +557,6 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                 },
               ),
             ] else ...[
-              // Year grid for year mode
               const Gap(8),
               SizedBox(
                 height: 180,
@@ -559,9 +608,7 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
                 ),
               ),
             ],
-
             const Gap(16),
-            // Actions
             Row(
               children: [
                 Expanded(
@@ -611,6 +658,218 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
   }
 }
 
+// ─── Date Range Picker Dialog (shared, used by both FilterBar & Dashboard) ─────
+
+class DateRangePickerDialog extends StatefulWidget {
+  final DateTime? initialStart;
+  final DateTime? initialEnd;
+
+  const DateRangePickerDialog({
+    super.key,
+    this.initialStart,
+    this.initialEnd,
+  });
+
+  @override
+  State<DateRangePickerDialog> createState() =>
+      _DateRangePickerDialogState();
+}
+
+class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
+  DateTime? _start;
+  DateTime? _end;
+
+  static const _monthShort = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _fmt(DateTime d) =>
+      '${d.day} ${_monthShort[d.month - 1]} ${d.year}';
+
+  @override
+  void initState() {
+    super.initState();
+    _start = widget.initialStart;
+    _end = widget.initialEnd;
+  }
+
+  Future<void> _pickDate(bool isStart) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: (isStart ? _start : _end) ?? now,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      helpText: isStart ? 'Select start date' : 'Select end date',
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _start = picked;
+        if (_end != null && _end!.isBefore(picked)) _end = picked;
+      } else {
+        _end = picked;
+        if (_start != null && _start!.isAfter(picked)) _start = picked;
+      }
+    });
+  }
+
+  Widget _dateButton(BuildContext context, bool isStart) {
+    final value = isStart ? _start : _end;
+    final accent = context.appAccent;
+    return GestureDetector(
+      onTap: () => _pickDate(isStart),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: value != null
+              ? accent.withValues(alpha: 0.08)
+              : context.appSurface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: value != null ? accent : context.appBorder,
+            width: value != null ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today_rounded,
+              size: 13,
+              color: value != null ? accent : context.appTextMuted,
+            ),
+            const Gap(6),
+            Expanded(
+              child: Text(
+                value != null ? _fmt(value) : (isStart ? 'Start date' : 'End date'),
+                style: GoogleFonts.dmSans(
+                  color: value != null
+                      ? context.appTextPrimary
+                      : context.appTextMuted,
+                  fontSize: 13,
+                  fontWeight: value != null
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canApply = _start != null && _end != null;
+
+    return Dialog(
+      backgroundColor: context.appSurfaceElevated,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Select date range',
+              style: GoogleFonts.dmSans(
+                  color: context.appTextPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700),
+            ),
+            const Gap(20),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('From',
+                          style: GoogleFonts.dmSans(
+                              color: context.appTextSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500)),
+                      const Gap(6),
+                      _dateButton(context, true),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.only(top: 18, left: 10, right: 10),
+                  child: Icon(Icons.arrow_forward_rounded,
+                      size: 16, color: context.appTextMuted),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('To',
+                          style: GoogleFonts.dmSans(
+                              color: context.appTextSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500)),
+                      const Gap(6),
+                      _dateButton(context, false),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Gap(20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, null),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: context.appTextSecondary,
+                      side: BorderSide(color: context.appBorder),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: Text('Cancel',
+                        style: GoogleFonts.dmSans(
+                            fontWeight: FontWeight.w500)),
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: canApply
+                        ? () => Navigator.pop(context, (_start!, _end!))
+                        : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.appAccent,
+                      disabledBackgroundColor:
+                          context.appAccent.withValues(alpha: 0.3),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: Text('Apply',
+                        style: GoogleFonts.dmSans(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Shared sub-widgets ────────────────────────────────────────────────────────
 
 class _FilterChip extends StatelessWidget {
@@ -643,7 +902,9 @@ class _FilterChip extends StatelessWidget {
           Text(
             label,
             style: GoogleFonts.dmSans(
-                color: color, fontSize: 11, fontWeight: FontWeight.w600),
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w600),
           ),
           const Gap(4),
           GestureDetector(
@@ -716,8 +977,6 @@ class _AdvancedFilterSheet extends ConsumerWidget {
               ],
             ),
             const Gap(20),
-
-            // Sort
             Text(
               'Sort by',
               style: GoogleFonts.dmSans(
@@ -765,10 +1024,7 @@ class _AdvancedFilterSheet extends ConsumerWidget {
                 );
               }).toList(),
             ),
-
             const Gap(20),
-
-            // Category filter
             Text(
               'Filter by category',
               style: GoogleFonts.dmSans(
@@ -827,9 +1083,7 @@ class _AdvancedFilterSheet extends ConsumerWidget {
                 );
               }).toList(),
             ),
-
             const Gap(24),
-
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(

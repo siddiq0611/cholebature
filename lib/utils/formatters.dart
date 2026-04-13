@@ -10,7 +10,10 @@ final _compactFmt = NumberFormat.compact(locale: 'en_IN');
 
 String formatCurrency(double amount) => _currencyFmt.format(amount);
 
-String formatCompact(double amount) => '₹${_compactFmt.format(amount)}';
+String formatCompact(double amount) {
+  final formatted = NumberFormat('#,##,##0.##', 'en_IN').format(amount);
+  return '₹$formatted';
+}
 
 String formatDate(DateTime date) => DateFormat('d MMM yyyy').format(date);
 

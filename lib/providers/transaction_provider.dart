@@ -3,7 +3,7 @@ import '../models/transaction_model.dart';
 import '../models/budget_model.dart';
 import '../services/database_service.dart';
 
-// ─── Date Filter ───────────────────────────────────────────────────────────────
+// ─── Date Filter ────────────────────────────────────────────────────────────
 enum DateFilter { daily, weekly, monthly, yearly, overall, range }
 
 DateTime _weekStart(DateTime date) =>
@@ -17,6 +17,8 @@ class FilterState {
   final DateTime day;
 
   final Set<TransactionCategory> selectedCategories;
+  // NEW: custom category ids selected in filter
+  final Set<String> selectedCustomCategoryIds;
   final DateTime? specificDate;
   final SortOption sortBy;
 
@@ -35,6 +37,7 @@ class FilterState {
     required this.weekStart,
     required this.day,
     this.selectedCategories = const {},
+    this.selectedCustomCategoryIds = const {},
     this.specificDate,
     this.sortBy = SortOption.dateNewest,
     this.pickedMonth,
@@ -45,7 +48,9 @@ class FilterState {
   });
 
   bool get hasActiveFilters =>
-      selectedCategories.isNotEmpty || specificDate != null;
+      selectedCategories.isNotEmpty ||
+      selectedCustomCategoryIds.isNotEmpty ||
+      specificDate != null;
 
   bool get hasCustomRange => rangeStart != null && rangeEnd != null;
 
@@ -56,6 +61,7 @@ class FilterState {
     DateTime? weekStart,
     DateTime? day,
     Set<TransactionCategory>? selectedCategories,
+    Set<String>? selectedCustomCategoryIds,
     DateTime? specificDate,
     bool clearSpecificDate = false,
     SortOption? sortBy,
@@ -77,6 +83,8 @@ class FilterState {
         weekStart: weekStart ?? this.weekStart,
         day: day ?? this.day,
         selectedCategories: selectedCategories ?? this.selectedCategories,
+        selectedCustomCategoryIds:
+            selectedCustomCategoryIds ?? this.selectedCustomCategoryIds,
         specificDate:
             clearSpecificDate ? null : (specificDate ?? this.specificDate),
         sortBy: sortBy ?? this.sortBy,
@@ -118,6 +126,17 @@ class FilterNotifier extends StateNotifier<FilterState> {
     state = state.copyWith(selectedCategories: current);
   }
 
+  // NEW: toggle a custom category id in the filter
+  void toggleCustomCategory(String id) {
+    final current = Set<String>.from(state.selectedCustomCategoryIds);
+    if (current.contains(id)) {
+      current.remove(id);
+    } else {
+      current.add(id);
+    }
+    state = state.copyWith(selectedCustomCategoryIds: current);
+  }
+
   void setSpecificDate(DateTime? date) =>
       state = date == null
           ? state.copyWith(clearSpecificDate: true)
@@ -125,6 +144,7 @@ class FilterNotifier extends StateNotifier<FilterState> {
 
   void clearAdvancedFilters() => state = state.copyWith(
         selectedCategories: {},
+        selectedCustomCategoryIds: {},
         clearSpecificDate: true,
         sortBy: SortOption.dateNewest,
       );
@@ -191,7 +211,6 @@ class FilterNotifier extends StateNotifier<FilterState> {
     } else if (state.filter == DateFilter.yearly) {
       state = state.copyWith(year: state.year - 1, clearPickedYear: true);
     }
-    // range: no-op
   }
 
   void next() {
@@ -224,11 +243,10 @@ class FilterNotifier extends StateNotifier<FilterState> {
         state = state.copyWith(year: state.year + 1, clearPickedYear: true);
       }
     }
-    // range: no-op
   }
 }
 
-// ─── Transaction list ──────────────────────────────────────────────────────────
+// ─── Transaction list ────────────────────────────────────────────────────────
 final transactionListProvider =
     StateNotifierProvider<TransactionNotifier, AsyncValue<List<Transaction>>>(
   (ref) => TransactionNotifier(ref),
@@ -291,11 +309,25 @@ class TransactionNotifier
         }
       }
 
-      // Apply category filter
-      if (filter.selectedCategories.isNotEmpty) {
-        txs = txs
-            .where((t) => filter.selectedCategories.contains(t.category))
-            .toList();
+      // Apply category filter (built-in + custom)
+      final hasCatFilter = filter.selectedCategories.isNotEmpty;
+      final hasCustomCatFilter = filter.selectedCustomCategoryIds.isNotEmpty;
+
+      if (hasCatFilter || hasCustomCatFilter) {
+        txs = txs.where((t) {
+          // Transaction belongs to a selected custom category
+          if (t.customCategoryId != null &&
+              filter.selectedCustomCategoryIds.contains(t.customCategoryId)) {
+            return true;
+          }
+          // Transaction belongs to a selected built-in category
+          // (only match when it is NOT a custom-category transaction)
+          if (t.customCategoryId == null &&
+              filter.selectedCategories.contains(t.category)) {
+            return true;
+          }
+          return false;
+        }).toList();
       }
 
       // Apply sort
@@ -341,7 +373,7 @@ class TransactionNotifier
   Future<void> refresh() => _load();
 }
 
-// ─── Summary ───────────────────────────────────────────────────────────────────
+// ─── Summary ─────────────────────────────────────────────────────────────────
 final summaryProvider = Provider((ref) {
   final txAsync = ref.watch(transactionListProvider);
 
@@ -391,25 +423,70 @@ final summaryProvider = Provider((ref) {
   );
 });
 
-final categoryExpenseProvider =
-    Provider<Map<TransactionCategory, double>>((ref) {
+// ─── NEW: Unified category expense entry ─────────────────────────────────────
+/// Represents a single "category bucket" for expense breakdown.
+/// Custom categories carry [customCategoryId]; built-in ones leave it null.
+class CategoryExpenseEntry {
+  final TransactionCategory category;
+  final String? customCategoryId;
+  final double amount;
+
+  const CategoryExpenseEntry({
+    required this.category,
+    required this.customCategoryId,
+    required this.amount,
+  });
+
+  /// Stable grouping key.
+  String get key =>
+      customCategoryId != null ? 'custom_$customCategoryId' : 'builtin_${category.index}';
+
+  bool get isCustom => customCategoryId != null;
+}
+
+/// Provides expense totals grouped by their true category (built-in OR custom).
+/// Use this instead of [categoryExpenseProvider] in charts and breakdowns.
+final categoryExpenseEntriesProvider =
+    Provider<List<CategoryExpenseEntry>>((ref) {
   final txAsync = ref.watch(transactionListProvider);
   return txAsync.when(
     data: (txs) {
-      final map = <TransactionCategory, double>{};
+      final map = <String, CategoryExpenseEntry>{};
       for (final t in txs) {
-        if (t.type == TransactionType.expense) {
-          map[t.category] = (map[t.category] ?? 0) + t.amount;
-        }
+        if (t.type != TransactionType.expense) continue;
+        final key = t.customCategoryId != null
+            ? 'custom_${t.customCategoryId}'
+            : 'builtin_${t.category.index}';
+        final existing = map[key];
+        map[key] = CategoryExpenseEntry(
+          category: t.category,
+          customCategoryId: t.customCategoryId,
+          amount: (existing?.amount ?? 0) + t.amount,
+        );
       }
-      return map;
+      return map.values.toList()
+        ..sort((a, b) => b.amount.compareTo(a.amount));
     },
-    loading: () => {},
-    error: (_, __) => {},
+    loading: () => [],
+    error: (_, __) => [],
   );
 });
 
-// ─── Borrow/Lend provider ──────────────────────────────────────────────────────
+/// Legacy provider kept for backward-compat (BudgetBar etc. that only need
+/// built-in categories). Custom-category transactions are excluded here.
+final categoryExpenseProvider =
+    Provider<Map<TransactionCategory, double>>((ref) {
+  final entries = ref.watch(categoryExpenseEntriesProvider);
+  final map = <TransactionCategory, double>{};
+  for (final e in entries) {
+    if (!e.isCustom) {
+      map[e.category] = (map[e.category] ?? 0) + e.amount;
+    }
+  }
+  return map;
+});
+
+// ─── Borrow/Lend provider ─────────────────────────────────────────────────────
 final borrowLendProvider =
     StateNotifierProvider<BorrowLendNotifier, AsyncValue<List<Transaction>>>(
   (ref) => BorrowLendNotifier(),
@@ -443,7 +520,7 @@ class BorrowLendNotifier
 final isLoadingProvider = Provider<bool>(
     (ref) => ref.watch(transactionListProvider).isLoading);
 
-// ─── Budget provider ───────────────────────────────────────────────────────────
+// ─── Budget provider ──────────────────────────────────────────────────────────
 final budgetListProvider =
     StateNotifierProvider<BudgetNotifier, AsyncValue<List<Budget>>>(
   (ref) => BudgetNotifier(),
@@ -568,7 +645,7 @@ class SecurityNotifier extends StateNotifier<AsyncValue<bool>> {
   }
 }
 
-// ─── Average insight provider ──────────────────────────────────────────────────
+// ─── Average insight provider ─────────────────────────────────────────────────
 class AverageInsightResult {
   final double average;
   final double current;

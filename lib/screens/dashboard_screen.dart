@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../main.dart';
+import '../models/custom_category_model.dart';
+import '../providers/custom_category_provider.dart';
 import '../providers/transaction_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
@@ -18,7 +20,7 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(summaryProvider);
-    final catData = ref.watch(categoryExpenseProvider);
+    final catData = ref.watch(categoryExpenseProvider); // kept for SummaryCards compat
     final themeMode = ref.watch(themeModeProvider);
     final filter = ref.watch(filterProvider);
     final notifier = ref.read(filterProvider.notifier);
@@ -90,10 +92,11 @@ class DashboardScreen extends ConsumerWidget {
                 const Gap(16),
                 const BudgetBar(),
                 const Gap(16),
+                // CategoryChart now reads its own provider internally
                 CategoryChart(data: catData),
                 const Gap(16),
-                _CategoryBreakdownList(
-                    data: catData, total: summary.expense),
+                // Use the new unified breakdown list
+                const _CategoryBreakdownList(),
                 const Gap(64),
               ]),
             ),
@@ -104,7 +107,7 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-// ─── Period filter tabs ────────────────────────────────────────────────────────
+// ─── Period filter tabs ───────────────────────────────────────────────────────
 
 class _PeriodFilterBar extends StatelessWidget {
   final FilterState filter;
@@ -178,7 +181,7 @@ class _PeriodFilterBar extends StatelessWidget {
   }
 }
 
-// ─── Period navigator ──────────────────────────────────────────────────────────
+// ─── Period navigator ─────────────────────────────────────────────────────────
 
 class _PeriodNav extends StatelessWidget {
   final FilterState filter;
@@ -628,7 +631,7 @@ class _Chevron extends StatelessWidget {
       );
 }
 
-// ─── Average insight card ──────────────────────────────────────────────────────
+// ─── Average insight card ─────────────────────────────────────────────────────
 
 class _AverageInsightCard extends ConsumerWidget {
   const _AverageInsightCard();
@@ -651,17 +654,19 @@ class _AverageInsightCard extends ConsumerWidget {
           return const SizedBox.shrink();
         }
 
-        final pct = insight.pctDiff.toStringAsFixed(0);
         final color =
             insight.isMore ? context.appExpense : context.appIncome;
 
         String label;
+        final l_amount = formatCompact(insight.diff.abs());
+        final l_pct = insight.pctDiff.toStringAsFixed(0);
+
         if (insight.diff.abs() < 1) {
-          label = 'On par with average ${insight.periodName}';
+          label = 'Spending is right on average for this ${insight.periodName}';
         } else if (insight.isMore) {
-          label = '$pct% more than average ${insight.periodName}';
+          label = '$l_pct% ($l_amount) more than your ${insight.periodName}ly average';
         } else {
-          label = '$pct% less than average ${insight.periodName} 🎉';
+          label = '$l_pct% ($l_amount) less than your ${insight.periodName}ly average';
         }
 
         return Container(
@@ -712,7 +717,7 @@ class _AverageInsightCard extends ConsumerWidget {
   }
 }
 
-// ─── Add button ────────────────────────────────────────────────────────────────
+// ─── Add button ───────────────────────────────────────────────────────────────
 
 class _AddButton extends StatelessWidget {
   @override
@@ -746,19 +751,24 @@ class _AddButton extends StatelessWidget {
       );
 }
 
-// ─── Category breakdown ────────────────────────────────────────────────────────
+// ─── Category breakdown list ──────────────────────────────────────────────────
+// Now reads categoryExpenseEntriesProvider and resolves custom categories.
 
-class _CategoryBreakdownList extends StatelessWidget {
-  final Map data;
-  final double total;
-  const _CategoryBreakdownList(
-      {required this.data, required this.total});
+class _CategoryBreakdownList extends ConsumerWidget {
+  const _CategoryBreakdownList();
 
   @override
-  Widget build(BuildContext context) {
-    if (data.isEmpty) return const SizedBox();
-    final sorted = data.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+  Widget build(BuildContext context, WidgetRef ref) {
+    final entries = ref.watch(categoryExpenseEntriesProvider);
+    final customCats = ref.watch(customCategoryProvider).when(
+          data: (list) => {for (final c in list) c.id: c},
+          loading: () => <String, CustomCategory>{},
+          error: (_, __) => <String, CustomCategory>{},
+        );
+
+    if (entries.isEmpty) return const SizedBox();
+
+    final total = entries.fold<double>(0, (s, e) => s + e.amount);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -776,9 +786,31 @@ class _CategoryBreakdownList extends StatelessWidget {
                   fontSize: 15,
                   fontWeight: FontWeight.w600)),
           const Gap(14),
-          ...sorted.map((entry) {
-            final info = categoryInfoMap[entry.key]!;
-            final pct = total > 0 ? entry.value / total : 0.0;
+          ...entries.map((entry) {
+            final pct = total > 0 ? entry.amount / total : 0.0;
+
+            Color color;
+            String label;
+            IconData icon;
+
+            if (entry.isCustom) {
+              final cat = customCats[entry.customCategoryId];
+              if (cat != null) {
+                color = cat.deleted ? context.appTextMuted : cat.color;
+                label = cat.deleted ? '${cat.name} (deleted)' : cat.name;
+                icon = cat.icon;
+              } else {
+                color = context.appTextMuted;
+                label = 'Unknown';
+                icon = Icons.help_outline_rounded;
+              }
+            } else {
+              final info = categoryInfoMap[entry.category]!;
+              color = info.color;
+              label = info.label;
+              icon = info.icon;
+            }
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: Column(
@@ -786,15 +818,15 @@ class _CategoryBreakdownList extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(info.icon, color: info.color, size: 16),
+                      Icon(icon, color: color, size: 16),
                       const Gap(8),
-                      Text(info.label,
+                      Text(label,
                           style: GoogleFonts.dmSans(
                               color: context.appTextSecondary,
                               fontSize: 13,
                               fontWeight: FontWeight.w500)),
                       const Spacer(),
-                      Text('₹${entry.value.toStringAsFixed(0)}',
+                      Text('₹${entry.amount.toStringAsFixed(0)}',
                           style: GoogleFonts.dmSans(
                               color: context.appTextPrimary,
                               fontSize: 13,
@@ -807,8 +839,7 @@ class _CategoryBreakdownList extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: pct.toDouble(),
                       backgroundColor: context.appBorder,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(info.color),
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
                       minHeight: 5,
                     ),
                   ),

@@ -23,7 +23,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -82,7 +82,7 @@ class DatabaseService {
         icon_code_point INTEGER NOT NULL,
         icon_font_family TEXT NOT NULL DEFAULT 'MaterialIcons',
         deleted INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
         category_type INTEGER NOT NULL DEFAULT 0
       )
     ''');

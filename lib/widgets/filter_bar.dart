@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../models/custom_category_model.dart';
 import '../models/transaction_model.dart';
+import '../providers/custom_category_provider.dart';
 import '../providers/transaction_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
@@ -41,6 +43,13 @@ class FilterBar extends ConsumerWidget {
     final notifier = ref.read(filterProvider.notifier);
     final accent = context.appAccent;
 
+    // Resolve custom category names for active filter chips
+    final customCatMap = ref.watch(customCategoryProvider).when(
+          data: (list) => {for (final c in list) c.id: c},
+          loading: () => <String, CustomCategory>{},
+          error: (_, __) => <String, CustomCategory>{},
+        );
+
     String periodLabel() {
       if (filter.specificDate != null) {
         return formatDate(filter.specificDate!);
@@ -69,8 +78,8 @@ class FilterBar extends ConsumerWidget {
       }
     }
 
-    final hasAdvancedFilters =
-        filter.hasActiveFilters || filter.sortBy != SortOption.dateNewest;
+    final hasAdvancedFilters = filter.hasActiveFilters ||
+        filter.sortBy != SortOption.dateNewest;
 
     final showNavRow = filter.filter != DateFilter.overall;
     final showChevrons = filter.filter != DateFilter.range;
@@ -252,13 +261,16 @@ class FilterBar extends ConsumerWidget {
             ],
           ),
         ],
+        // Active filter chips (built-in + custom)
         if (filter.selectedCategories.isNotEmpty ||
+            filter.selectedCustomCategoryIds.isNotEmpty ||
             filter.sortBy != SortOption.dateNewest) ...[
           const Gap(8),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                // Built-in category chips
                 ...filter.selectedCategories.map((cat) {
                   final info = categoryInfoMap[cat]!;
                   return Padding(
@@ -268,6 +280,24 @@ class FilterBar extends ConsumerWidget {
                       color: info.color,
                       icon: info.icon,
                       onRemove: () => notifier.toggleCategory(cat),
+                    ),
+                  );
+                }),
+                // Custom category chips
+                ...filter.selectedCustomCategoryIds.map((id) {
+                  final cat = customCatMap[id];
+                  final label = cat?.name ?? 'Unknown';
+                  final color = cat != null
+                      ? (cat.deleted ? context.appTextMuted : cat.color)
+                      : context.appTextMuted;
+                  final icon = cat?.icon ?? Icons.category_rounded;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _FilterChip(
+                      label: label,
+                      color: color,
+                      icon: icon,
+                      onRemove: () => notifier.toggleCustomCategory(id),
                     ),
                   );
                 }),
@@ -394,7 +424,7 @@ class FilterBar extends ConsumerWidget {
   }
 }
 
-// ─── Month/Year picker ─────────────────────────────────────────────────────────
+// ─── Month/Year picker ────────────────────────────────────────────────────────
 
 enum _PickerMode { month, year }
 
@@ -658,7 +688,7 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
   }
 }
 
-// ─── Date Range Picker Dialog (shared, used by both FilterBar & Dashboard) ─────
+// ─── Date Range Picker Dialog (shared) ───────────────────────────────────────
 
 class DateRangePickerDialog extends StatefulWidget {
   final DateTime? initialStart;
@@ -870,7 +900,7 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
   }
 }
 
-// ─── Shared sub-widgets ────────────────────────────────────────────────────────
+// ─── Shared sub-widgets ───────────────────────────────────────────────────────
 
 class _FilterChip extends StatelessWidget {
   final String label;
@@ -917,6 +947,9 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
+// ─── Advanced Filter Sheet ────────────────────────────────────────────────────
+// Now shows BOTH built-in and custom categories.
+
 class _AdvancedFilterSheet extends ConsumerWidget {
   final WidgetRef ref;
   const _AdvancedFilterSheet({required this.ref});
@@ -925,6 +958,15 @@ class _AdvancedFilterSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef widgetRef) {
     final filter = widgetRef.watch(filterProvider);
     final notifier = widgetRef.read(filterProvider.notifier);
+
+    // Only show expense-type custom categories (income ones aren't relevant
+    // to the expense transaction list but we include all active ones so users
+    // can filter income custom categories too).
+    final customCats = widgetRef.watch(customCategoryProvider).when(
+          data: (list) => list.where((c) => !c.deleted).toList(),
+          loading: () => <CustomCategory>[],
+          error: (_, __) => <CustomCategory>[],
+        );
 
     return Container(
       decoration: BoxDecoration(
@@ -977,6 +1019,8 @@ class _AdvancedFilterSheet extends ConsumerWidget {
               ],
             ),
             const Gap(20),
+
+            // ── Sort ──────────────────────────────────────────────────────
             Text(
               'Sort by',
               style: GoogleFonts.dmSans(
@@ -1025,6 +1069,8 @@ class _AdvancedFilterSheet extends ConsumerWidget {
               }).toList(),
             ),
             const Gap(20),
+
+            // ── Built-in categories ────────────────────────────────────────
             Text(
               'Filter by category',
               style: GoogleFonts.dmSans(
@@ -1083,6 +1129,70 @@ class _AdvancedFilterSheet extends ConsumerWidget {
                 );
               }).toList(),
             ),
+
+            // ── Custom categories (only shown if any exist) ────────────────
+            if (customCats.isNotEmpty) ...[
+              const Gap(16),
+              Text(
+                'Custom categories',
+                style: GoogleFonts.dmSans(
+                  color: context.appTextSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Gap(8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: customCats.map((cat) {
+                  final isSel =
+                      filter.selectedCustomCategoryIds.contains(cat.id);
+                  return GestureDetector(
+                    onTap: () => notifier.toggleCustomCategory(cat.id),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: isSel
+                            ? cat.color.withValues(alpha: 0.18)
+                            : context.appSurfaceElevated,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSel ? cat.color : context.appBorder,
+                          width: isSel ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(cat.icon,
+                              color: isSel
+                                  ? cat.color
+                                  : context.appTextMuted,
+                              size: 13),
+                          const Gap(5),
+                          Text(
+                            cat.name,
+                            style: GoogleFonts.dmSans(
+                              color: isSel
+                                  ? cat.color
+                                  : context.appTextSecondary,
+                              fontSize: 12,
+                              fontWeight: isSel
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+
             const Gap(24),
             SizedBox(
               width: double.infinity,

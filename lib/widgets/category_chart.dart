@@ -1,41 +1,61 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/transaction_model.dart';
+import '../models/custom_category_model.dart';
+import '../providers/custom_category_provider.dart';
+import '../providers/transaction_provider.dart';
 import '../theme/app_theme.dart';
 
-class CategoryChart extends StatefulWidget {
+// CategoryChart now reads categoryExpenseEntriesProvider so custom categories
+// appear as their own slices instead of being merged into "Misc".
+class CategoryChart extends ConsumerStatefulWidget {
+  // Keep the old data param for backward-compat but it is ignored now —
+  // the widget reads the provider directly.
   final Map<TransactionCategory, double> data;
 
   const CategoryChart({super.key, required this.data});
 
   @override
-  State<CategoryChart> createState() => _CategoryChartState();
+  ConsumerState<CategoryChart> createState() => _CategoryChartState();
 }
 
-class _CategoryChartState extends State<CategoryChart> {
+class _CategoryChartState extends ConsumerState<CategoryChart> {
   int _touchedIndex = -1;
 
   @override
   Widget build(BuildContext context) {
-    if (widget.data.isEmpty) return _EmptyChart();
+    final entries = ref.watch(categoryExpenseEntriesProvider);
+    final customCats = ref.watch(customCategoryProvider).when(
+          data: (list) => {for (final c in list) c.id: c},
+          loading: () => <String, CustomCategory>{},
+          error: (_, __) => <String, CustomCategory>{},
+        );
 
-    final sorted = widget.data.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final total = sorted.fold<double>(0, (s, e) => s + e.value);
+    if (entries.isEmpty) return _EmptyChart();
 
-    final sections = sorted.asMap().entries.map((entry) {
-      final i = entry.key;
-      final e = entry.value;
-      final info = categoryInfoMap[e.key]!;
+    final total = entries.fold<double>(0, (s, e) => s + e.amount);
+
+    final sections = entries.asMap().entries.map((mapEntry) {
+      final i = mapEntry.key;
+      final e = mapEntry.value;
       final isTouched = i == _touchedIndex;
-      final pct = total > 0 ? (e.value / total * 100) : 0;
+      final pct = total > 0 ? (e.amount / total * 100) : 0;
+
+      Color color;
+      if (e.isCustom) {
+        final cat = customCats[e.customCategoryId];
+        color = cat != null ? (cat.deleted ? context.appTextMuted : cat.color) : context.appTextMuted;
+      } else {
+        color = categoryInfoMap[e.category]!.color;
+      }
 
       return PieChartSectionData(
-        value: e.value,
-        color: info.color,
+        value: e.amount,
+        color: color,
         radius: isTouched ? 68 : 56,
         title: isTouched ? '${pct.toStringAsFixed(0)}%' : '',
         titleStyle: GoogleFonts.dmSans(
@@ -44,7 +64,7 @@ class _CategoryChartState extends State<CategoryChart> {
           fontWeight: FontWeight.w700,
         ),
         borderSide: isTouched
-            ? BorderSide(color: info.color, width: 2)
+            ? BorderSide(color: color, width: 2)
             : const BorderSide(color: Colors.transparent, width: 0),
       );
     }).toList();
@@ -69,7 +89,6 @@ class _CategoryChartState extends State<CategoryChart> {
           ),
           const Gap(16),
 
-          // ── Pie chart — fixed size, never overflows ──
           SizedBox(
             height: 160,
             child: PieChart(
@@ -98,9 +117,7 @@ class _CategoryChartState extends State<CategoryChart> {
 
           const Gap(16),
 
-          // ── Legend grid — shows ALL categories in a 2-column grid ──
-          // Using a grid avoids Row overflow regardless of category count.
-          _LegendGrid(entries: sorted, total: total),
+          _LegendGrid(entries: entries, total: total, customCats: customCats),
         ],
       ),
     )
@@ -110,18 +127,21 @@ class _CategoryChartState extends State<CategoryChart> {
   }
 }
 
-/// Two-column legend grid — expands to fit any number of categories.
 class _LegendGrid extends StatelessWidget {
-  final List<MapEntry<TransactionCategory, double>> entries;
+  final List<CategoryExpenseEntry> entries;
   final double total;
+  final Map<String, CustomCategory> customCats;
 
-  const _LegendGrid({required this.entries, required this.total});
+  const _LegendGrid({
+    required this.entries,
+    required this.total,
+    required this.customCats,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Split into two columns
-    final left = <MapEntry<TransactionCategory, double>>[];
-    final right = <MapEntry<TransactionCategory, double>>[];
+    final left = <CategoryExpenseEntry>[];
+    final right = <CategoryExpenseEntry>[];
     for (var i = 0; i < entries.length; i++) {
       if (i.isEven) {
         left.add(entries[i]);
@@ -139,6 +159,7 @@ class _LegendGrid extends StatelessWidget {
                 .map((e) => _LegendItem(
                       entry: e,
                       total: total,
+                      customCats: customCats,
                     ))
                 .toList(),
           ),
@@ -150,6 +171,7 @@ class _LegendGrid extends StatelessWidget {
                 .map((e) => _LegendItem(
                       entry: e,
                       total: total,
+                      customCats: customCats,
                     ))
                 .toList(),
           ),
@@ -160,15 +182,37 @@ class _LegendGrid extends StatelessWidget {
 }
 
 class _LegendItem extends StatelessWidget {
-  final MapEntry<TransactionCategory, double> entry;
+  final CategoryExpenseEntry entry;
   final double total;
+  final Map<String, CustomCategory> customCats;
 
-  const _LegendItem({required this.entry, required this.total});
+  const _LegendItem({
+    required this.entry,
+    required this.total,
+    required this.customCats,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final info = categoryInfoMap[entry.key]!;
-    final pct = total > 0 ? entry.value / total * 100 : 0.0;
+    final pct = total > 0 ? entry.amount / total * 100 : 0.0;
+
+    Color color;
+    String label;
+
+    if (entry.isCustom) {
+      final cat = customCats[entry.customCategoryId];
+      if (cat != null) {
+        color = cat.deleted ? context.appTextMuted : cat.color;
+        label = cat.deleted ? '${cat.name} (deleted)' : cat.name;
+      } else {
+        color = context.appTextMuted;
+        label = 'Unknown';
+      }
+    } else {
+      final info = categoryInfoMap[entry.category]!;
+      color = info.color;
+      label = info.label;
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -178,14 +222,14 @@ class _LegendItem extends StatelessWidget {
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: info.color,
+              color: color,
               shape: BoxShape.circle,
             ),
           ),
           const Gap(6),
           Expanded(
             child: Text(
-              info.label,
+              label,
               style: GoogleFonts.dmSans(
                 color: context.appTextSecondary,
                 fontSize: 11,

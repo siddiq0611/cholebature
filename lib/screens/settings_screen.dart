@@ -14,6 +14,7 @@ import '../services/import_service.dart';
 import '../theme/app_theme.dart';
 import 'budget_screen.dart';
 import 'feedback_screen.dart';
+import 'manage_categories_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -115,6 +116,16 @@ class SettingsScreen extends ConsumerWidget {
                         MaterialPageRoute(
                             builder: (_) => const BudgetScreen())),
                   ),
+                  _Divider(),                    
+                  _Tile(                        
+                    icon: Icons.category_rounded,
+                    iconColor: context.appAccent,
+                    title: 'Manage Categories',
+                    subtitle: 'Create, edit and delete custom categories',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(
+                            builder: (_) => const ManageCategoriesScreen())),
+                  ),
                 ]),
 
                 const Gap(20),
@@ -162,7 +173,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: context.appTextSecondary,
                     title: 'Version',
-                    subtitle: '3.4.21',
+                    subtitle: '3.5.0',
                   ),
                   _Divider(),
                   _Tile(

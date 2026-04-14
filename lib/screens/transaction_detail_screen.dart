@@ -1,3 +1,4 @@
+import 'package:chole_bature/providers/custom_category_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -141,6 +142,7 @@ class TransactionDetailScreen extends ConsumerWidget {
                 children: [
                   CategoryIcon(
                     category: transaction.category,
+                    customCategoryId: transaction.customCategoryId,
                     size: 64,
                     iconSize: 28,
                   ),
@@ -194,12 +196,7 @@ class TransactionDetailScreen extends ConsumerWidget {
             _DetailSection(
               title: 'Details',
               rows: [
-                _DetailRow(
-                  icon: Icons.category_rounded,
-                  label: 'Category',
-                  value: info.label,
-                  valueColor: info.color,
-                ),
+                _CustomCategoryDetailRow(transaction: transaction),
                 _DetailRow(
                   icon: Icons.calendar_today_rounded,
                   label: 'Date',
@@ -265,7 +262,7 @@ class TransactionDetailScreen extends ConsumerWidget {
 
 class _DetailSection extends StatelessWidget {
   final String title;
-  final List<_DetailRow> rows;
+  final List<Widget> rows;
 
   const _DetailSection({required this.title, required this.rows});
 
@@ -333,6 +330,58 @@ class _DetailRow extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _CustomCategoryDetailRow extends ConsumerWidget {
+  final Transaction transaction;
+  const _CustomCategoryDetailRow({required this.transaction});
+ 
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    String label;
+    Color color;
+ 
+    if (transaction.customCategoryId != null) {
+      final cat = ref.watch(customCategoryProvider).when(
+            data: (list) {
+              try {
+                return list
+                    .firstWhere((c) => c.id == transaction.customCategoryId);
+              } catch (_) {
+                return null;
+              }
+            },
+            loading: () => null,
+            error: (_, __) => null,
+          );
+ 
+      if (cat != null) {
+        label = cat.deleted ? '${cat.name} (Deleted)' : cat.name;
+        color = cat.deleted ? context.appTextMuted : cat.color;
+      } else {
+        label = 'Unknown category';
+        color = context.appTextMuted;
+      }
+    } else {
+      final info = categoryInfoMap[transaction.category]!;
+      label = info.label;
+      color = info.color;
+    }
+ 
+    return Row(
+      children: [
+        Icon(Icons.category_rounded, color: context.appTextMuted, size: 16),
+        const Gap(10),
+        Text('Category',
+            style: GoogleFonts.dmSans(
+                color: context.appTextSecondary, fontSize: 13)),
+        const Spacer(),
+        Text(label,
+            style: GoogleFonts.dmSans(
+                color: color, fontSize: 13, fontWeight: FontWeight.w600)),
       ],
     );
   }

@@ -1,3 +1,4 @@
+import 'package:chole_bature/models/custom_category_model.dart';
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import 'package:path/path.dart';
 import '../models/transaction_model.dart';
@@ -18,18 +19,17 @@ class DatabaseService {
 
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'cholebature_v3.db');
+    final path = join(dbPath, 'cholebature_v4.db');
 
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    // Transactions table
     await db.execute('''
       CREATE TABLE transactions (
         id TEXT PRIMARY KEY,
@@ -38,13 +38,13 @@ class DatabaseService {
         category INTEGER NOT NULL,
         type INTEGER NOT NULL,
         date INTEGER NOT NULL,
-        note TEXT
+        note TEXT,
+        custom_category_id TEXT
       )
     ''');
     await db.execute('CREATE INDEX idx_tx_date ON transactions(date)');
     await db.execute('CREATE INDEX idx_tx_type ON transactions(type)');
-
-    // Future / Recurring transactions table
+ 
     await db.execute('''
       CREATE TABLE future_transactions (
         id TEXT PRIMARY KEY,
@@ -63,14 +63,26 @@ class DatabaseService {
     ''');
     await db.execute(
         'CREATE INDEX idx_ft_due ON future_transactions(next_due)');
-
-    // Budgets table
+ 
     await db.execute('''
       CREATE TABLE budgets (
         id TEXT PRIMARY KEY,
         period INTEGER NOT NULL UNIQUE,
         amount REAL NOT NULL,
         active INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+ 
+    // NEW in v4
+    await db.execute('''
+      CREATE TABLE custom_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color_value INTEGER NOT NULL,
+        icon_code_point INTEGER NOT NULL,
+        icon_font_family TEXT NOT NULL DEFAULT 'MaterialIcons',
+        deleted INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
       )
     ''');
   }
@@ -114,6 +126,31 @@ class DatabaseService {
             period INTEGER NOT NULL UNIQUE,
             amount REAL NOT NULL,
             active INTEGER NOT NULL DEFAULT 1
+          )
+        ''');
+      }
+    }
+    if (oldVersion < 4) {
+      // Add custom_category_id column to transactions
+      try {
+        await db.execute(
+            'ALTER TABLE transactions ADD COLUMN custom_category_id TEXT');
+      } catch (_) {}
+ 
+      // Create custom_categories table if it doesn't exist yet
+      final tables = await db
+          .rawQuery("SELECT name FROM sqlite_master WHERE type='table'");
+      final tableNames = tables.map((t) => t['name'] as String).toSet();
+      if (!tableNames.contains('custom_categories')) {
+        await db.execute('''
+          CREATE TABLE custom_categories (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            color_value INTEGER NOT NULL,
+            icon_code_point INTEGER NOT NULL,
+            icon_font_family TEXT NOT NULL DEFAULT 'MaterialIcons',
+            deleted INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
           )
         ''');
       }
@@ -236,5 +273,39 @@ class DatabaseService {
       await db.close();
       _db = null;
     }
+  }
+
+  Future<void> insertCustomCategory(CustomCategory cat) async {
+    final db = await database;
+    await db.insert('custom_categories', cat.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+ 
+  Future<void> updateCustomCategory(CustomCategory cat) async {
+    final db = await database;
+    await db.update('custom_categories', cat.toMap(),
+        where: 'id = ?', whereArgs: [cat.id]);
+  }
+ 
+  /// Soft-delete: sets deleted = 1. Transactions still resolve the category.
+  Future<void> softDeleteCustomCategory(String id) async {
+    final db = await database;
+    await db.update('custom_categories', {'deleted': 1},
+        where: 'id = ?', whereArgs: [id]);
+  }
+ 
+  /// Hard-delete: permanently removes the row.
+  Future<void> hardDeleteCustomCategory(String id) async {
+    final db = await database;
+    await db.delete('custom_categories', where: 'id = ?', whereArgs: [id]);
+  }
+ 
+  /// Returns ALL custom categories including soft-deleted ones,
+  /// so transactions can always resolve their category for display.
+  Future<List<CustomCategory>> getAllCustomCategories() async {
+    final db = await database;
+    final maps = await db.query('custom_categories',
+        orderBy: 'deleted ASC, created_at ASC');
+    return maps.map(CustomCategory.fromMap).toList();
   }
 }

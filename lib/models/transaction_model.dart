@@ -1,3 +1,8 @@
+// CHANGED: added customCategoryId field to Transaction.
+// When this is non-null the transaction belongs to a CustomCategory,
+// and the `category` field is set to TransactionCategory.misc as a fallback
+// for any legacy code that only reads the enum.
+
 enum TransactionCategory {
   // Expense
   food, travel, essentials, work, misc, shop, home, health,
@@ -20,6 +25,11 @@ class Transaction {
   final DateTime date;
   final String? note;
 
+  /// Non-null when this transaction uses a user-defined [CustomCategory].
+  /// When present, [category] is set to [TransactionCategory.misc] as a
+  /// no-op fallback so old code never breaks.
+  final String? customCategoryId;
+
   const Transaction({
     required this.id,
     required this.title,
@@ -28,7 +38,10 @@ class Transaction {
     required this.type,
     required this.date,
     this.note,
+    this.customCategoryId,
   });
+
+  bool get isCustomCategory => customCategoryId != null;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -38,6 +51,7 @@ class Transaction {
         'type': type.index,
         'date': date.millisecondsSinceEpoch,
         'note': note,
+        'custom_category_id': customCategoryId,
       };
 
   factory Transaction.fromMap(Map<String, dynamic> map) => Transaction(
@@ -48,6 +62,7 @@ class Transaction {
         type: TransactionType.values[map['type'] as int],
         date: DateTime.fromMillisecondsSinceEpoch(map['date'] as int),
         note: map['note'] as String?,
+        customCategoryId: map['custom_category_id'] as String?,
       );
 
   Transaction copyWith({
@@ -58,6 +73,8 @@ class Transaction {
     TransactionType? type,
     DateTime? date,
     String? note,
+    String? customCategoryId,
+    bool clearCustomCategoryId = false,
   }) =>
       Transaction(
         id: id ?? this.id,
@@ -67,5 +84,8 @@ class Transaction {
         type: type ?? this.type,
         date: date ?? this.date,
         note: note ?? this.note,
+        customCategoryId: clearCustomCategoryId
+            ? null
+            : (customCategoryId ?? this.customCategoryId),
       );
 }

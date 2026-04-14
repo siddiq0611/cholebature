@@ -115,7 +115,10 @@ class TransactionTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              CategoryIcon(category: transaction.category),
+              CategoryIcon(
+                category: transaction.category,
+                customCategoryId: transaction.customCategoryId,
+              ),
               const Gap(12),
               Expanded(
                 child: Column(

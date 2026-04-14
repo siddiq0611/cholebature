@@ -1,3 +1,5 @@
+import 'package:chole_bature/models/custom_category_model.dart';
+import 'package:chole_bature/providers/custom_category_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +30,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   late TransactionCategory _category;
   DateTime _date = DateTime.now();
   bool _saving = false;
+  String? _customCategoryId;
 
   // ── Inline error — always visible inside the sheet ─────────────────────────
   String? _errorMsg;
@@ -46,6 +49,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
       _type     = tx.type;
       _category = tx.category;
       _date     = tx.date;
+      _customCategoryId = tx.customCategoryId;
     } else {
       _type     = widget.defaultType ?? TransactionType.expense;
       _category = _defaultCategoryFor(_type);
@@ -111,14 +115,15 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
     setState(() => _saving = true);
     try {
       final tx = Transaction(
-        id:       _isEditing ? widget.existing!.id : _uuid.v4(),
-        title:    rawTitle,
-        amount:   amount,
-        category: _category,
-        type:     _type,
-        date:     _date,
-        note:     _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      );
+       id:               _isEditing ? widget.existing!.id : _uuid.v4(),
+       title:            rawTitle,
+       amount:           amount,
+       category:         _category,
+       type:             _type,
+       date:             _date,
+       note:             _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+       customCategoryId: _customCategoryId,
+     );
 
       final notifier = ref.read(transactionListProvider.notifier);
       if (_isEditing) {
@@ -262,6 +267,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                     onChanged: (t) => setState(() {
                       _type = t;
                       _category = _defaultCategoryFor(t);
+                      _customCategoryId = null; 
                       _errorMsg = null;
                     }),
                   ),
@@ -305,8 +311,13 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
 
                   _CategoryPicker(
                     selected: _category,
+                    customCategoryId: _customCategoryId,
                     type: _type,
-                    onChanged: (c) => setState(() => _category = c),
+                    onChanged: (cat, customId) => setState(() {
+                      _category = cat;
+                      _customCategoryId = customId;
+                      _errorMsg = null;
+                    }),
                   ),
                   const Gap(12),
 
@@ -440,30 +451,41 @@ class _TypeToggle extends StatelessWidget {
 }
 
 // ── Category Picker ────────────────────────────────────────────────────────────
-class _CategoryPicker extends StatelessWidget {
+class _CategoryPicker extends ConsumerWidget {
   final TransactionCategory selected;
+  final String? customCategoryId;
   final TransactionType type;
-  final ValueChanged<TransactionCategory> onChanged;
-
+  // onChanged now returns BOTH the built-in category AND the custom id.
+  // For built-in: (category, null)
+  // For custom:   (TransactionCategory.misc, customCat.id)
+  final void Function(TransactionCategory, String?) onChanged;
+ 
   const _CategoryPicker({
     required this.selected,
+    required this.customCategoryId,
     required this.type,
     required this.onChanged,
   });
-
-  List<TransactionCategory> get _cats {
+ 
+  List<TransactionCategory> get _builtinCats {
     switch (type) {
       case TransactionType.expense:
         return [
-          TransactionCategory.food, TransactionCategory.travel,
-          TransactionCategory.essentials, TransactionCategory.shop,
-          TransactionCategory.home, TransactionCategory.health,
-          TransactionCategory.work, TransactionCategory.misc,
+          TransactionCategory.food,
+          TransactionCategory.travel,
+          TransactionCategory.essentials,
+          TransactionCategory.shop,
+          TransactionCategory.home,
+          TransactionCategory.health,
+          TransactionCategory.work,
+          TransactionCategory.misc,
         ];
       case TransactionType.income:
         return [
-          TransactionCategory.salary, TransactionCategory.cashback,
-          TransactionCategory.gifts, TransactionCategory.otherIncome,
+          TransactionCategory.salary,
+          TransactionCategory.cashback,
+          TransactionCategory.gifts,
+          TransactionCategory.otherIncome,
         ];
       case TransactionType.borrowed:
         return [TransactionCategory.borrowed];
@@ -471,62 +493,120 @@ class _CategoryPicker extends StatelessWidget {
         return [TransactionCategory.lend];
     }
   }
-
+ 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Only show custom cats for expense / income — not for borrow/lend
+    final showCustom = type == TransactionType.expense ||
+        type == TransactionType.income;
+ 
+    final customCats = showCustom
+        ? ref.watch(customCategoryProvider).when(
+              data: (list) => list.where((c) => !c.deleted).toList(),
+              loading: () => <CustomCategory>[],
+              error: (_, __) => <CustomCategory>[],
+            )
+        : <CustomCategory>[];
+ 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Category',
-            style: GoogleFonts.dmSans(
-                color: context.appTextSecondary,
-                fontSize: 12, fontWeight: FontWeight.w500)),
+        Text(
+          'Category',
+          style: GoogleFonts.dmSans(
+              color: context.appTextSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w500),
+        ),
         const Gap(8),
         Wrap(
-          spacing: 8, runSpacing: 8,
-          children: _cats.map((c) {
-            final info  = categoryInfoMap[c]!;
-            final isSel = selected == c;
-            return GestureDetector(
-              onTap: () => onChanged(c),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 7),
-                decoration: BoxDecoration(
-                  color: isSel
-                      ? info.color.withValues(alpha: 0.18)
-                      : context.appSurfaceElevated,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSel ? info.color : context.appBorder,
-                    width: isSel ? 1.5 : 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(info.icon,
-                        color: isSel ? info.color : context.appTextMuted,
-                        size: 14),
-                    const Gap(5),
-                    Text(info.label,
-                        style: GoogleFonts.dmSans(
-                          color: isSel
-                              ? info.color
-                              : context.appTextSecondary,
-                          fontSize: 12,
-                          fontWeight: isSel
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                        )),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            // ── Built-in chips ──────────────────────────────────────────
+            ..._builtinCats.map((c) {
+              final info = categoryInfoMap[c]!;
+              // Selected if no custom category is active AND this is the
+              // selected built-in category.
+              final isSel = customCategoryId == null && selected == c;
+              return _Chip(
+                label: info.label,
+                icon: info.icon,
+                color: info.color,
+                isSelected: isSel,
+                onTap: () => onChanged(c, null),
+              );
+            }),
+ 
+            // ── Custom category chips ───────────────────────────────────
+            ...customCats.map((c) {
+              final isSel = customCategoryId == c.id;
+              return _Chip(
+                label: c.name,
+                icon: c.icon,
+                color: c.color,
+                isSelected: isSel,
+                onTap: () => onChanged(TransactionCategory.misc, c.id),
+              );
+            }),
+          ],
         ),
       ],
+    );
+  }
+}
+ 
+class _Chip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
+ 
+  const _Chip({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
+  });
+ 
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? color.withValues(alpha: 0.18)
+              : context.appSurfaceElevated,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? color : context.appBorder,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                color: isSelected ? color : context.appTextMuted,
+                size: 14),
+            const Gap(5),
+            Text(
+              label,
+              style: GoogleFonts.dmSans(
+                color: isSelected ? color : context.appTextSecondary,
+                fontSize: 12,
+                fontWeight:
+                    isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -133,7 +133,11 @@ class BorrowLendTile extends ConsumerWidget {
               Row(
                 children: [
                   CategoryIcon(
-                      category: tx.category, size: 42, iconSize: 18),
+                    category: tx.category,
+                    customCategoryId: tx.customCategoryId,
+                    size: 42,
+                    iconSize: 18,
+                  ),
                   const Gap(12),
                   Expanded(
                     child: Column(
@@ -291,7 +295,12 @@ class BorrowLendTile extends ConsumerWidget {
             // Header row
             Row(
               children: [
-                CategoryIcon(category: tx.category, size: 48, iconSize: 20),
+                CategoryIcon(
+                  category: tx.category,
+                  customCategoryId: tx.customCategoryId,
+                  size: 42,
+                  iconSize: 18,
+                ),
                 const Gap(14),
                 Expanded(
                   child: Column(

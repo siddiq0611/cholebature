@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/future_transaction_provider.dart';
 import '../providers/security_provider.dart';
@@ -15,6 +16,7 @@ import 'future_transactions_screen.dart';
 import 'lock_screen.dart';
 import 'settings_screen.dart';
 import 'transactions_screen.dart';
+import 'quick_log_sheet.dart';
 
 final _tabProvider = StateProvider<int>((ref) => 0);
 
@@ -100,17 +102,37 @@ class _HomeShellState extends ConsumerState<HomeShell>
         body: IndexedStack(index: tab, children: _screens),
         bottomNavigationBar: _BottomNav(tab: tab, overdueCount: overdueCount),
         floatingActionButton: tab == 1
-            ? FloatingActionButton(
-                onPressed: () => showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => const AddTransactionSheet(),
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Quick Log FAB (stacked above the normal add)
+                FloatingActionButton.small(
+                  heroTag: 'quicklog',
+                  onPressed: () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const QuickLogSheet(),
+                  ),
+                  backgroundColor: context.appSurfaceElevated,
+                  child: Icon(Icons.format_list_bulleted_add,
+                      color: context.appAccent, size: 20),
                 ),
-                backgroundColor: context.appAccent,
-                child: const Icon(Icons.add_rounded, color: Colors.white),
-              )
-            : null,
+                const Gap(8),
+                FloatingActionButton(
+                  heroTag: 'addtx',
+                  onPressed: () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const QuickLogSheet(),
+                  ),
+                  backgroundColor: context.appAccent,
+                  child: const Icon(Icons.add_rounded, color: Colors.white),
+                ),
+              ],
+            )
+          : null,
       ),
     );
   }

@@ -455,9 +455,6 @@ class _CategoryPicker extends ConsumerWidget {
   final TransactionCategory selected;
   final String? customCategoryId;
   final TransactionType type;
-  // onChanged now returns BOTH the built-in category AND the custom id.
-  // For built-in: (category, null)
-  // For custom:   (TransactionCategory.misc, customCat.id)
   final void Function(TransactionCategory, String?) onChanged;
  
   const _CategoryPicker({
@@ -496,13 +493,20 @@ class _CategoryPicker extends ConsumerWidget {
  
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Only show custom cats for expense / income — not for borrow/lend
     final showCustom = type == TransactionType.expense ||
         type == TransactionType.income;
  
+    // ── Key fix: filter custom cats by their categoryType ─────────────────
+    final matchingType = type == TransactionType.expense
+        ? CustomCategoryType.expense
+        : CustomCategoryType.income;
+ 
     final customCats = showCustom
         ? ref.watch(customCategoryProvider).when(
-              data: (list) => list.where((c) => !c.deleted).toList(),
+              data: (list) => list
+                  .where((c) =>
+                      !c.deleted && c.categoryType == matchingType)
+                  .toList(),
               loading: () => <CustomCategory>[],
               error: (_, __) => <CustomCategory>[],
             )
@@ -523,11 +527,8 @@ class _CategoryPicker extends ConsumerWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            // ── Built-in chips ──────────────────────────────────────────
             ..._builtinCats.map((c) {
               final info = categoryInfoMap[c]!;
-              // Selected if no custom category is active AND this is the
-              // selected built-in category.
               final isSel = customCategoryId == null && selected == c;
               return _Chip(
                 label: info.label,
@@ -537,8 +538,6 @@ class _CategoryPicker extends ConsumerWidget {
                 onTap: () => onChanged(c, null),
               );
             }),
- 
-            // ── Custom category chips ───────────────────────────────────
             ...customCats.map((c) {
               final isSel = customCategoryId == c.id;
               return _Chip(
@@ -546,7 +545,8 @@ class _CategoryPicker extends ConsumerWidget {
                 icon: c.icon,
                 color: c.color,
                 isSelected: isSel,
-                onTap: () => onChanged(TransactionCategory.misc, c.id),
+                onTap: () =>
+                    onChanged(TransactionCategory.misc, c.id),
               );
             }),
           ],

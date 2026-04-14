@@ -83,6 +83,7 @@ class DatabaseService {
         icon_font_family TEXT NOT NULL DEFAULT 'MaterialIcons',
         deleted INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL
+        category_type INTEGER NOT NULL DEFAULT 0
       )
     ''');
   }
@@ -154,6 +155,12 @@ class DatabaseService {
           )
         ''');
       }
+    }
+    if (oldVersion < 5) {
+     try {
+       await db.execute(
+            'ALTER TABLE custom_categories ADD COLUMN category_type INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {}
     }
   }
 

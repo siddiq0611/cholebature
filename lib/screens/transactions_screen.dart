@@ -148,65 +148,58 @@ class TransactionsScreen extends ConsumerWidget {
 
 class _SummaryBar extends ConsumerWidget {
   const _SummaryBar();
-
+ 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(summaryProvider);
-
-    if (summary.income == 0 &&
-        summary.expense == 0 &&
-        summary.borrowed == 0 &&
-        summary.lent == 0) {
-      return const SizedBox.shrink();
-    }
-
-    final showBorrowLend = summary.borrowed > 0 || summary.lent > 0;
-
+ 
+    // Net = income - expenses (ignore borrow/lend in the headline number)
+    final net = summary.income - summary.expense;
+    final hasData = summary.income != 0 || summary.expense != 0 ||
+        summary.borrowed != 0 || summary.lent != 0;
+ 
+    if (!hasData) return const SizedBox.shrink();
+ 
+    final isPositive = net >= 0;
+    final color = isPositive ? context.appIncome : context.appExpense;
+ 
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: context.appSurfaceElevated,
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.appBorder),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
-          Expanded(
-            child: _SummaryItem(
-              label: 'Spent',
-              value: summary.expense,
-              color: context.appExpense,
-            ),
+          Icon(
+            isPositive
+                ? Icons.trending_up_rounded
+                : Icons.trending_down_rounded,
+            color: color,
+            size: 20,
           ),
-          _VerticalDivider(),
+          const SizedBox(width: 10),
           Expanded(
-            child: _SummaryItem(
-              label: 'Income',
-              value: summary.income,
-              color: context.appIncome,
-            ),
-          ),
-          _VerticalDivider(),
-          Expanded(
-            child: _SummaryItem(
-              label: 'Savings',
-              value: summary.savings,
-              color: summary.savings >= 0
-                  ? context.appIncome
-                  : context.appExpense,
-            ),
-          ),
-          if (showBorrowLend) ...[
-            _VerticalDivider(),
-            Expanded(
-              child: _SummaryItem(
-                label: 'Net B/L',
-                value: summary.borrowed - summary.lent,
-                color: context.appBorrowed,
+            child: Text(
+              isPositive ? 'Net surplus' : 'Net deficit',
+              style: GoogleFonts.dmSans(
+                color: color,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
               ),
             ),
-          ],
+          ),
+          Text(
+            formatCompact(net.abs()),
+            style: GoogleFonts.dmSans(
+              color: color,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+          ),
         ],
       ),
     );

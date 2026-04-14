@@ -81,8 +81,8 @@ const Map<TransactionCategory, CategoryInfo> categoryInfoMap = {
       icon: Icons.shopping_bag_rounded,
       color: CategoryColors.essentials),
   TransactionCategory.work: CategoryInfo(
-      label: 'Work',
-      icon: Icons.work_rounded,
+      label: 'Rides',
+      icon: Icons.directions_car_rounded,
       color: CategoryColors.work),
   TransactionCategory.misc: CategoryInfo(
       label: 'Misc',

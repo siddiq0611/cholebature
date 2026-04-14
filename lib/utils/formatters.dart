@@ -6,8 +6,6 @@ final _currencyFmt = NumberFormat.currency(
   decimalDigits: 2,
 );
 
-final _compactFmt = NumberFormat.compact(locale: 'en_IN');
-
 String formatCurrency(double amount) => _currencyFmt.format(amount);
 
 String formatCompact(double amount) {

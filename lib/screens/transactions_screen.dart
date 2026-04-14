@@ -206,57 +206,6 @@ class _SummaryBar extends ConsumerWidget {
   }
 }
 
-class _SummaryItem extends StatelessWidget {
-  final String label;
-  final double value;
-  final Color color;
-
-  const _SummaryItem({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.dmSans(
-            color: context.appTextMuted,
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.3,
-          ),
-        ),
-        const Gap(3),
-        Text(
-          formatCompact(value.abs()),
-          style: GoogleFonts.dmSans(
-            color: color,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _VerticalDivider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 28,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      color: context.appBorder,
-    );
-  }
-}
-
 // ─── Empty state ───────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {

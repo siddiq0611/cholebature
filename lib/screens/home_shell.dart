@@ -125,7 +125,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
                     context: context,
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
-                    builder: (_) => const QuickLogSheet(),
+                    builder: (_) => const AddTransactionSheet(),
                   ),
                   backgroundColor: context.appAccent,
                   child: const Icon(Icons.add_rounded, color: Colors.white),

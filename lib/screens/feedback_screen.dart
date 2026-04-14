@@ -11,10 +11,6 @@ import '../theme/app_theme.dart';
 const _googleFormBase =
     'https://docs.google.com/forms/d/e/1FAIpQLSfN3hgpUR66QS0emkH0uCMA14ul4j93w3FXoIy74W88V-ndDw/formResponse';
 
-// The viewform URL for opening in browser as fallback
-const _googleFormViewUrl =
-    'https://docs.google.com/forms/d/e/1FAIpQLSfN3hgpUR66QS0emkH0uCMA14ul4j93w3FXoIy74W88V-ndDw/viewform';
-
 const _googleFormFallbackUrl =
     'https://docs.google.com/forms/d/e/1FAIpQLSchCr-GVCrI_d7ytec6OmniwvHWyXuj8chfM97Chem4EOgjrQ/viewform?usp=dialog';
 

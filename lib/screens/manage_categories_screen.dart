@@ -146,13 +146,12 @@ class ManageCategoriesScreen extends ConsumerWidget {
               child: Text('Cancel',
                   style:
                       GoogleFonts.dmSans(color: context.appTextSecondary))),
-          ElevatedButton(
+          TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: context.appExpense),
+              style: TextButton.styleFrom(
+                  foregroundColor: context.appExpense),
               child: Text('Delete',
-                  style: GoogleFonts.dmSans(
-                      color: Colors.white, fontWeight: FontWeight.w600))),
+                  style: GoogleFonts.dmSans(fontWeight: FontWeight.w600))),
         ],
       ),
     );
@@ -181,13 +180,12 @@ class ManageCategoriesScreen extends ConsumerWidget {
               child: Text('Cancel',
                   style:
                       GoogleFonts.dmSans(color: context.appTextSecondary))),
-          ElevatedButton(
+          TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: context.appExpense),
+              style: TextButton.styleFrom(
+                  foregroundColor: context.appExpense),
               child: Text('Remove permanently',
-                  style: GoogleFonts.dmSans(
-                      color: Colors.white, fontWeight: FontWeight.w600))),
+                  style: GoogleFonts.dmSans(fontWeight: FontWeight.w600))),
         ],
       ),
     );
@@ -446,6 +444,36 @@ class _CategorySheetState extends ConsumerState<_CategorySheet> {
       setState(() => _error = 'Please enter a name.');
       return;
     }
+
+    // Check for duplicate name within the same category type
+    final allCats = ref.read(customCategoryProvider).when(
+      data: (list) => list,
+      loading: () => <CustomCategory>[],
+      error: (_, __) => <CustomCategory>[],
+    );
+
+    final defaultNames = categoryInfoMap.values
+        .map((e) => e.label.toLowerCase())
+        .toSet();
+
+    final normalized = name.trim().toLowerCase();
+
+    final isDuplicate =
+      defaultNames.contains(normalized) ||   // ✅ NEW (default check)
+      allCats.any((c) =>
+        !c.deleted &&
+        c.categoryType == _type &&
+        c.name.trim().toLowerCase() == normalized &&
+        (_isEditing ? c.id != widget.existing!.id : true),
+      );
+
+    if (isDuplicate) {
+      setState(() => _error =
+          'A ${_type == CustomCategoryType.expense ? 'expense' : 'income'} '
+          'category named "$name" already exists.');
+      return;
+    }
+
     setState(() {
       _error = null;
       _saving = true;

@@ -1,11 +1,10 @@
-// Imports from the unified single-CSV format produced by ExportService.
-// Also still handles old-style transaction-only CSVs for backwards compat.
-//
 import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import '../models/custom_category_model.dart';
 import '../models/transaction_model.dart';
 import '../models/future_transaction_model.dart';
 import '../utils/formatters.dart';
@@ -15,23 +14,30 @@ class ImportResult {
   final int skippedTx;
   final int importedFt;
   final int skippedFt;
+  final int importedCats;
+  final int skippedCats;
   final int failed;
   final List<String> errors;
   final List<Transaction> transactions;
   final List<FutureTransaction> futureTransactions;
+  final List<CustomCategory> customCategories;
 
   const ImportResult({
     required this.importedTx,
     required this.skippedTx,
     required this.importedFt,
     required this.skippedFt,
+    required this.importedCats,
+    required this.skippedCats,
     required this.failed,
     required this.errors,
     required this.transactions,
     required this.futureTransactions,
+    required this.customCategories,
   });
 
-  bool get hasAnything => importedTx > 0 || importedFt > 0;
+  bool get hasAnything =>
+      importedTx > 0 || importedFt > 0 || importedCats > 0;
 }
 
 class ImportService {
@@ -40,6 +46,8 @@ class ImportService {
   static Future<ImportResult?> pickAndParseAll({
     required List<Transaction> existingTx,
     required List<FutureTransaction> existingFt,
+    // Pass existing custom categories so we can deduplicate
+    List<CustomCategory> existingCustomCats = const [],
   }) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -48,10 +56,11 @@ class ImportService {
     );
     if (result == null || result.files.isEmpty) return null;
 
-    final allTx  = <Transaction>[];
-    final allFt  = <FutureTransaction>[];
-    final errors = <String>[];
-    int skippedTx = 0, skippedFt = 0, failed = 0;
+    final allTx   = <Transaction>[];
+    final allFt   = <FutureTransaction>[];
+    final allCats = <CustomCategory>[];
+    final errors  = <String>[];
+    int skippedTx = 0, skippedFt = 0, skippedCats = 0, failed = 0;
 
     final txKeys = existingTx
         .map((t) => '${formatDate(t.date)}|${t.title.toLowerCase()}|${t.amount}')
@@ -59,6 +68,24 @@ class ImportService {
     final ftKeys = existingFt
         .map((f) => '${f.title.toLowerCase()}|${f.nextDue.toIso8601String()}')
         .toSet();
+
+    // Key for deduplicating custom categories: name (lowercase) + type
+    // This intentionally uses name+type, not id, so that importing on a
+    // fresh install correctly reuses any category the user already created
+    // manually with the same name.
+    final catKeys = existingCustomCats
+        .map((c) => '${c.name.trim().toLowerCase()}|${c.categoryType.name}')
+        .toSet();
+
+    // id-to-new-id map: the CSV's category UUID may differ from what exists
+    // locally; we build this map so transactions can find the right local id.
+    final catIdRemap = <String, String>{};
+
+    // Seed remap from existing categories (name+type → existing id)
+    for (final c in existingCustomCats) {
+      final key = '${c.name.trim().toLowerCase()}|${c.categoryType.name}';
+      catIdRemap[key] = c.id;
+    }
 
     for (final pf in result.files) {
       if (pf.path == null) continue;
@@ -73,7 +100,85 @@ class ImportService {
       final isUnified = header.isNotEmpty && header[0] == 'datatype';
 
       if (isUnified) {
-        // ── New unified format ───────────────────────────────────────────
+        // ── Pass 1: Process CustomCategory rows first ─────────────────────
+        for (var i = 1; i < rows.length; i++) {
+          final row = rows[i];
+          if (_blank(row)) continue;
+          String c(int col) =>
+              col < row.length ? row[col].toString().trim() : '';
+
+          if (c(0).toLowerCase() != 'customcategory') continue;
+
+          try {
+            final csvId       = c(1);
+            final name        = c(3);
+            final catTypeName = c(5).toLowerCase();
+            final extraRaw    = c(8);
+
+            if (name.isEmpty) {
+              errors.add('Row ${i + 1}: custom category missing name');
+              failed++;
+              continue;
+            }
+
+            final catType = catTypeName == 'income'
+                ? CustomCategoryType.income
+                : CustomCategoryType.expense;
+
+            final dedupeKey = '${name.trim().toLowerCase()}|${catType.name}';
+
+            if (catKeys.contains(dedupeKey)) {
+              // Already exists locally — just record the id mapping so
+              // transactions can resolve against the local id
+              skippedCats++;
+              // catIdRemap already has it from seed above
+              continue;
+            }
+
+            Map<String, dynamic> extra = {};
+            try { extra = jsonDecode(extraRaw) as Map<String, dynamic>; }
+            catch (_) {}
+
+            // Parse color — accept both '#AARRGGBB' and '#RRGGBB'
+            int colorValue = 0xFF9E9E9E; // fallback grey
+            final hexRaw = extra['colorHex'] as String? ?? '';
+            final hex = hexRaw.replaceAll('#', '');
+            if (hex.length == 8) {
+              colorValue = int.tryParse(hex, radix: 16) ?? colorValue;
+            } else if (hex.length == 6) {
+              colorValue = int.tryParse('FF$hex', radix: 16) ?? colorValue;
+            }
+
+            final iconCodePoint = (extra['iconCodePoint'] as num?)?.toInt()
+                ?? Icons.category_rounded.codePoint;
+            final iconFontFamily =
+                extra['iconFontFamily'] as String? ?? 'MaterialIcons';
+            final deleted = extra['deleted'] as bool? ?? false;
+
+            // Always generate a fresh local id
+            final newId = _uuid.v4();
+            catIdRemap[dedupeKey] = newId;
+            // Also remap by csv id so transactions referencing it by old id work
+            if (csvId.isNotEmpty) catIdRemap[csvId] = newId;
+
+            catKeys.add(dedupeKey);
+            allCats.add(CustomCategory(
+              id: newId,
+              name: name,
+              colorValue: colorValue,
+              iconCodePoint: iconCodePoint,
+              iconFontFamily: iconFontFamily,
+              deleted: deleted,
+              createdAt: DateTime.now(),
+              categoryType: catType,
+            ));
+          } catch (e) {
+            errors.add('Row ${i + 1} (CustomCategory): $e');
+            failed++;
+          }
+        }
+
+        // ── Pass 2: Process Transaction / Scheduled rows ──────────────────
         for (var i = 1; i < rows.length; i++) {
           final row = rows[i];
           if (_blank(row)) continue;
@@ -81,29 +186,31 @@ class ImportService {
             String c(int col) =>
                 col < row.length ? row[col].toString().trim() : '';
 
-            final dataType  = c(0).toLowerCase();
-            final id        = c(1);
-            final dateStr   = c(2);
-            final title     = c(3);
-            final typeStr   = c(4).toLowerCase();
-            final catStr    = c(5).toLowerCase();
-            final amtStr    = c(6).replaceAll('₹', '').replaceAll(',', '');
-            final note      = c(7);
-            final extraRaw  = c(8);
+            final dataType = c(0).toLowerCase();
+            if (dataType == 'customcategory') continue; // already handled
+
+            final id       = c(1);
+            final dateStr  = c(2);
+            final title    = c(3);
+            final typeStr  = c(4).toLowerCase();
+            final catStr   = c(5).toLowerCase();
+            final amtStr   = c(6).replaceAll('₹', '').replaceAll(',', '');
+            final note     = c(7);
+            final extraRaw = c(8);
 
             final amount = double.tryParse(amtStr);
             if (amount == null) {
               errors.add('Row ${i + 1}: invalid amount "$amtStr"');
-              failed++; continue;
+              failed++;
+              continue;
             }
-
-            final cat = _parseCat(catStr) ?? TransactionCategory.misc;
 
             if (dataType == 'scheduled') {
               final nextDue = DateTime.tryParse(dateStr);
               if (nextDue == null) {
                 errors.add('Row ${i + 1}: invalid date "$dateStr"');
-                failed++; continue;
+                failed++;
+                continue;
               }
               final key =
                   '${title.toLowerCase()}|${nextDue.toIso8601String()}';
@@ -113,6 +220,7 @@ class ImportService {
               try { extra = jsonDecode(extraRaw) as Map<String, dynamic>; }
               catch (_) {}
 
+              final cat = _parseCat(catStr) ?? TransactionCategory.misc;
               final ft = FutureTransaction(
                 id: id.length > 8 ? id : _uuid.v4(),
                 title: title,
@@ -136,30 +244,70 @@ class ImportService {
               );
               allFt.add(ft);
               ftKeys.add(key);
+
             } else {
               // Transaction / Borrowed / Lend
               final date = _parseDate(dateStr);
               if (date == null) {
                 errors.add('Row ${i + 1}: invalid date "$dateStr"');
-                failed++; continue;
+                failed++;
+                continue;
               }
               final type = _parseTxType(typeStr);
               if (type == null) {
                 errors.add('Row ${i + 1}: unknown type "$typeStr"');
-                failed++; continue;
+                failed++;
+                continue;
               }
+
               final key =
                   '${formatDate(date)}|${title.toLowerCase()}|$amount';
               if (txKeys.contains(key)) { skippedTx++; continue; }
+
+              // Resolve custom category id
+              // Strategy: check ExtraJson first (new format), then try
+              // to match by category name + transaction type (fallback for
+              // older exports that had the name but no id in ExtraJson).
+              String? resolvedCustomCatId;
+              Map<String, dynamic> extra = {};
+              try { extra = jsonDecode(extraRaw) as Map<String, dynamic>; }
+              catch (_) {}
+
+              final csvCustomId = extra['customCategoryId'] as String?;
+              if (csvCustomId != null && csvCustomId.isNotEmpty) {
+                // Try remapping by the original CSV id
+                resolvedCustomCatId = catIdRemap[csvCustomId];
+                // If still null, try name-based lookup as fallback
+                if (resolvedCustomCatId == null) {
+                  final txCatType = (type == TransactionType.income)
+                      ? CustomCategoryType.income
+                      : CustomCategoryType.expense;
+                  final nameKey = '${catStr}|${txCatType.name}';
+                  resolvedCustomCatId = catIdRemap[nameKey];
+                }
+              } else if (catStr.isNotEmpty) {
+                // Old export format — try matching by name+type
+                final txCatType = (type == TransactionType.income)
+                    ? CustomCategoryType.income
+                    : CustomCategoryType.expense;
+                final nameKey = '${catStr}|${txCatType.name}';
+                resolvedCustomCatId = catIdRemap[nameKey];
+              }
+
+              // Built-in category (used as fallback when no custom match)
+              final builtinCat = resolvedCustomCatId != null
+                  ? TransactionCategory.misc
+                  : (_parseCat(catStr) ?? TransactionCategory.misc);
 
               allTx.add(Transaction(
                 id: id.length > 8 ? id : _uuid.v4(),
                 title: title,
                 amount: amount,
-                category: cat,
+                category: builtinCat,
                 type: type,
                 date: date,
                 note: note.isEmpty ? null : note,
+                customCategoryId: resolvedCustomCatId,
               ));
               txKeys.add(key);
             }
@@ -168,8 +316,9 @@ class ImportService {
             failed++;
           }
         }
+
       } else {
-        // ── Legacy transaction-only format ───────────────────────────────
+        // ── Legacy transaction-only format (unchanged) ────────────────────
         final hasId   = header.isNotEmpty && header[0] == 'id';
         final colId   = hasId ? 0 : -1;
         final colDate = hasId ? 1 : 0;
@@ -228,14 +377,17 @@ class ImportService {
       skippedTx: skippedTx,
       importedFt: allFt.length,
       skippedFt: skippedFt,
+      importedCats: allCats.length,
+      skippedCats: skippedCats,
       failed: failed,
       errors: errors,
       transactions: allTx,
       futureTransactions: allFt,
+      customCategories: allCats,
     );
   }
 
-  // ── Parsers ──────────────────────────────────────────────────────────────────
+  // ── Parsers (unchanged) ───────────────────────────────────────────────────
 
   static bool _blank(List row) =>
       row.isEmpty || (row.length == 1 && row.first.toString().trim().isEmpty);
@@ -250,8 +402,7 @@ class ImportService {
     };
     final parts = s.trim().split(RegExp(r'[\s/\-]'));
     if (parts.length == 3) {
-      final mn =
-          monthNames[parts[1].toLowerCase().substring(0, 3)];
+      final mn = monthNames[parts[1].toLowerCase().substring(0, 3)];
       if (mn != null) {
         final d = int.tryParse(parts[0]);
         final y = int.tryParse(parts[2]);
@@ -294,6 +445,7 @@ class ImportService {
         'otherincome': TransactionCategory.otherIncome,
         'borrowed': TransactionCategory.borrowed,
         'lend': TransactionCategory.lend,
+        'rides': TransactionCategory.work,
       }[s.toLowerCase()];
 
   static RecurrenceType _parseRec(String s) => switch (s) {

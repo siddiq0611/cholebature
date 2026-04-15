@@ -162,10 +162,11 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
                     style:
                         GoogleFonts.dmSans(color: context.appTextSecondary)),
               ),
-              ElevatedButton(
+              TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
+                style: TextButton.styleFrom(foregroundColor: context.appAccent),
                 child: Text('Confirm',
-                    style: GoogleFonts.dmSans(color: Colors.white)),
+                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
               ),
             ],
           ),

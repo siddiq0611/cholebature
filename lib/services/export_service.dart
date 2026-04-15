@@ -1,15 +1,9 @@
-// Single CSV export containing ALL data:
-//   DataType | ID | Date/NextDue | Title | Type | Category | Amount | Note | ExtraJson
-//
-// DataType values:
-//   "Transaction"  — normal / borrow / lend transactions
-//   "Scheduled"    — future/recurring transactions (extra fields in ExtraJson)
-//
 import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../models/custom_category_model.dart';
 import '../models/transaction_model.dart';
 import '../models/future_transaction_model.dart';
 import '../theme/app_theme.dart';
@@ -24,25 +18,67 @@ class ExportService {
   static Future<void> exportAll({
     required List<Transaction> transactions,
     required List<FutureTransaction> futureTransactions,
+    // Pass ALL custom categories (including soft-deleted so transactions
+    // that reference them can still be resolved on import)
+    List<CustomCategory> customCategories = const [],
   }) async {
     final rows = <List<String>>[_header];
 
-    // ── Normal / Borrow / Lend transactions ────────────────────────────────
+    // ── 1. Custom category definition rows (come FIRST so import can
+    //       create them before processing transactions that reference them)
+    for (final cat in customCategories) {
+      final extra = jsonEncode({
+        'colorHex': '#${cat.colorValue.toRadixString(16).padLeft(8, '0').toUpperCase()}',
+        'iconCodePoint': cat.iconCodePoint,
+        'iconFontFamily': cat.iconFontFamily,
+        'categoryType': cat.categoryType.name, // 'expense' or 'income'
+        'deleted': cat.deleted,
+      });
+      rows.add([
+        'CustomCategory',
+        cat.id,
+        '', // no date
+        cat.name,
+        '', // no type
+        cat.categoryType.name,
+        '', // no amount
+        '', // no note
+        extra,
+      ]);
+    }
+
+    // ── 2. Normal / Borrow / Lend transactions
     for (final t in transactions) {
+      // Resolve the human-readable category label
+      String catLabel;
+      if (t.customCategoryId != null) {
+        // Find the custom category by id so we export its name
+        final customCat = customCategories
+            .where((c) => c.id == t.customCategoryId)
+            .firstOrNull;
+        catLabel = customCat?.name ?? categoryInfoMap[t.category]!.label;
+      } else {
+        catLabel = categoryInfoMap[t.category]!.label;
+      }
+
+      final extra = t.customCategoryId != null
+          ? jsonEncode({'customCategoryId': t.customCategoryId})
+          : '';
+
       rows.add([
         'Transaction',
         t.id,
         formatDate(t.date),
         t.title,
         _txTypeLabel(t.type),
-        categoryInfoMap[t.category]!.label,
+        catLabel,
         t.amount.toStringAsFixed(2),
         t.note ?? '',
-        '', // no extra
+        extra,
       ]);
     }
 
-    // ── Scheduled / Future transactions ────────────────────────────────────
+    // ── 3. Scheduled / Future transactions
     for (final ft in futureTransactions) {
       final extra = jsonEncode({
         'recurrence': ft.recurrence.name,
@@ -69,11 +105,10 @@ class ExportService {
     final ts   = DateTime.now().millisecondsSinceEpoch;
     final name = 'cholebature_backup_$ts.csv';
 
-    final tmpDir = await getTemporaryDirectory();
+    final tmpDir  = await getTemporaryDirectory();
     final tmpFile = File('${tmpDir.path}/$name');
     await tmpFile.writeAsString(csv);
 
-    // Copy to public Downloads on Android
     if (Platform.isAndroid) {
       try {
         const dl = '/storage/emulated/0/Download';
@@ -87,7 +122,8 @@ class ExportService {
       [XFile(tmpFile.path, mimeType: 'text/csv')],
       subject: 'CholeBature — Full Backup',
       text: 'Exported ${transactions.length} transactions'
-            ' + ${futureTransactions.length} scheduled',
+            ' + ${futureTransactions.length} scheduled'
+            ' + ${customCategories.where((c) => !c.deleted).length} custom categories',
     );
   }
 

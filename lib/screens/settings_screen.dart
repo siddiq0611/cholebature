@@ -1,3 +1,5 @@
+import 'package:chole_bature/models/custom_category_model.dart';
+import 'package:chole_bature/providers/custom_category_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -173,7 +175,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: context.appTextSecondary,
                     title: 'Version',
-                    subtitle: '3.5.4',
+                    subtitle: '3.5.5',
                   ),
                   _Divider(),
                   _Tile(
@@ -213,18 +215,23 @@ class SettingsScreen extends ConsumerWidget {
   Future<void> _export(BuildContext context, WidgetRef ref) async {
     final txs = ref.read(transactionListProvider).when<List<Transaction>>(
         data: (v) => v, loading: () => [], error: (_, __) => []);
-    final fts = ref
-        .read(futureTransactionProvider)
+    final fts = ref.read(futureTransactionProvider)
         .when<List<FutureTransaction>>(
             data: (v) => v, loading: () => [], error: (_, __) => []);
+    // NEW: read all custom categories (including soft-deleted)
+    final cats = ref.read(customCategoryProvider)
+        .when<List<CustomCategory>>(
+            data: (v) => v, loading: () => [], error: (_, __) => []);
 
-    if (txs.isEmpty && fts.isEmpty) {
+    if (txs.isEmpty && fts.isEmpty && cats.isEmpty) {
       _snack(context, 'Nothing to export', color: context.appBorrowed);
       return;
     }
     _snack(context, 'Preparing…', color: context.appAccent, dur: 2);
     await ExportService.exportAll(
-        transactions: txs, futureTransactions: fts);
+        transactions: txs,
+        futureTransactions: fts,
+        customCategories: cats);   // NEW
     if (context.mounted) {
       _snack(context, 'Saved to Downloads & share sheet opened',
           color: context.appIncome, dur: 4);
@@ -272,14 +279,19 @@ class SettingsScreen extends ConsumerWidget {
 
     final existTx = ref.read(transactionListProvider).when<List<Transaction>>(
         data: (v) => v, loading: () => [], error: (_, __) => []);
-    final existFt = ref
-        .read(futureTransactionProvider)
+    final existFt = ref.read(futureTransactionProvider)
         .when<List<FutureTransaction>>(
+            data: (v) => v, loading: () => [], error: (_, __) => []);
+    // NEW: pass existing custom cats for deduplication
+    final existCats = ref.read(customCategoryProvider)
+        .when<List<CustomCategory>>(
             data: (v) => v, loading: () => [], error: (_, __) => []);
 
     _snack(context, 'Opening file picker…', color: context.appAccent, dur: 1);
     final result = await ImportService.pickAndParseAll(
-        existingTx: existTx, existingFt: existFt);
+        existingTx: existTx,
+        existingFt: existFt,
+        existingCustomCats: existCats);   // NEW
     if (result == null || !context.mounted) return;
 
     final confirm = await showDialog<bool>(
@@ -288,6 +300,10 @@ class SettingsScreen extends ConsumerWidget {
     );
     if (confirm != true || !context.mounted) return;
 
+    // NEW: import custom categories FIRST so transactions can reference them
+    for (final cat in result.customCategories) {
+      await ref.read(customCategoryProvider.notifier).add(cat);
+    }
     for (final tx in result.transactions) {
       await ref.read(transactionListProvider.notifier).add(tx);
     }
@@ -297,9 +313,11 @@ class SettingsScreen extends ConsumerWidget {
 
     if (!context.mounted) return;
     final parts = <String>[];
+    if (result.importedCats > 0) parts.add('${result.importedCats} categories');
     if (result.importedTx > 0) parts.add('${result.importedTx} transactions');
     if (result.importedFt > 0) parts.add('${result.importedFt} scheduled');
-    final skipped = result.skippedTx + result.skippedFt;
+    final skipped =
+        result.skippedTx + result.skippedFt + result.skippedCats;
     _snack(
       context,
       'Imported ${parts.join(' + ')}'
@@ -359,6 +377,16 @@ class _ImportPreviewDialog extends StatelessWidget {
             if (result.importedTx > 0)
               _PRow(Icons.receipt_long_rounded, context.appIncome,
                   'Transactions', '${result.importedTx}'),
+            if (result.importedCats > 0) ...[
+              _PRow(Icons.category_rounded, context.appAccent,
+                  'Custom categories', '${result.importedCats}'),
+              const Gap(8),
+            ],
+            if (result.skippedCats > 0) ...[
+              _PRow(Icons.skip_next_rounded, context.appBorrowed,
+                  'Categories already exist', '${result.skippedCats}'),
+              const Gap(8),
+            ],
             if (result.skippedTx > 0) ...[
               const Gap(8),
               _PRow(Icons.skip_next_rounded, context.appBorrowed,
@@ -394,11 +422,11 @@ class _ImportPreviewDialog extends StatelessWidget {
             child: Text('Cancel',
                 style: GoogleFonts.dmSans(color: context.appTextSecondary))),
         if (result.hasAnything)
-          ElevatedButton(
+          TextButton(
               onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: context.appIncome),
+              style: TextButton.styleFrom(foregroundColor: context.appIncome),
               child: Text('Import',
-                  style: GoogleFonts.dmSans(color: Colors.white))),
+                  style: GoogleFonts.dmSans(fontWeight: FontWeight.w600))),
       ],
     );
   }

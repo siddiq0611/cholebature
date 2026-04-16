@@ -670,109 +670,129 @@ class AverageInsightResult {
 final averageInsightProvider =
     FutureProvider<AverageInsightResult?>((ref) async {
   final filter = ref.watch(filterProvider);
+ 
+  // No insight for "all time" or custom range views
   if (filter.filter == DateFilter.overall ||
       filter.filter == DateFilter.range) return null;
-
+ 
+  // We still need ALL historical expenses to compute a meaningful average,
+  // but we get the CURRENT period's total from the already-filtered provider
+  // so the insight reacts when you navigate between periods.
   final db = DatabaseService();
-  final allTxs = await db.getAllTransactions();
-  final expenses = allTxs
+  final allExpenses = (await db.getAllTransactions())
       .where((t) => t.type == TransactionType.expense)
       .toList();
-
-  if (expenses.isEmpty) return null;
-
+ 
+  if (allExpenses.isEmpty) return null;
+ 
+  // The current period's total comes from the filtered list so it is
+  // always in sync with whatever period is shown on screen.
+  final filteredTxs = ref.watch(transactionListProvider).when(
+        data: (list) => list,
+        loading: () => <Transaction>[],
+        error: (_, __) => <Transaction>[],
+      );
+  final currentPeriodTotal = filteredTxs
+      .where((t) => t.type == TransactionType.expense)
+      .fold<double>(0, (s, t) => s + t.amount);
+ 
   switch (filter.filter) {
+    // ── Daily ──────────────────────────────────────────────────────────────
     case DateFilter.daily:
       {
-        final Map<String, double> days = {};
-        for (final t in expenses) {
+        final Map<String, double> byDay = {};
+        for (final t in allExpenses) {
           final k = '${t.date.year}-${t.date.month}-${t.date.day}';
-          days[k] = (days[k] ?? 0) + t.amount;
+          byDay[k] = (byDay[k] ?? 0) + t.amount;
         }
-        if (days.isEmpty) return null;
-        final avg = days.values.reduce((a, b) => a + b) / days.length;
-        final d = filter.specificDate ?? filter.day;
-        final key = '${d.year}-${d.month}-${d.day}';
-        final current = days[key] ?? 0.0;
-        final diff = current - avg;
+        if (byDay.isEmpty) return null;
+ 
+        final avg = byDay.values.reduce((a, b) => a + b) / byDay.length;
+        final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
-          current: current,
+          current: currentPeriodTotal,
           diff: diff,
           isMore: diff > 0,
           periodName: 'day',
           hasData: true,
         );
       }
-
+ 
+    // ── Weekly ─────────────────────────────────────────────────────────────
     case DateFilter.weekly:
       {
-        final Map<String, double> weeks = {};
-        for (final t in expenses) {
-          final ws =
-              t.date.subtract(Duration(days: t.date.weekday - 1));
+        final Map<String, double> byWeek = {};
+        for (final t in allExpenses) {
+          final ws = t.date.subtract(Duration(days: t.date.weekday - 1));
           final k = '${ws.year}-${ws.month}-${ws.day}';
-          weeks[k] = (weeks[k] ?? 0) + t.amount;
+          byWeek[k] = (byWeek[k] ?? 0) + t.amount;
         }
-        if (weeks.isEmpty) return null;
-        final avg = weeks.values.reduce((a, b) => a + b) / weeks.length;
-        final ws = filter.weekStart;
-        final key = '${ws.year}-${ws.month}-${ws.day}';
-        final current = weeks[key] ?? 0.0;
-        final diff = current - avg;
+        if (byWeek.isEmpty) return null;
+ 
+        final avg = byWeek.values.reduce((a, b) => a + b) / byWeek.length;
+        final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
-          current: current,
+          current: currentPeriodTotal,
           diff: diff,
           isMore: diff > 0,
           periodName: 'week',
           hasData: true,
         );
       }
-
+ 
+    // ── Monthly ────────────────────────────────────────────────────────────
     case DateFilter.monthly:
       {
-        final Map<String, double> months = {};
-        for (final t in expenses) {
+        final Map<String, double> byMonth = {};
+        for (final t in allExpenses) {
           final k = '${t.date.year}-${t.date.month}';
-          months[k] = (months[k] ?? 0) + t.amount;
+          byMonth[k] = (byMonth[k] ?? 0) + t.amount;
         }
-        if (months.isEmpty) return null;
+        if (byMonth.isEmpty) return null;
+ 
+        // Make sure the current month bucket exists even if empty
+        // (so navigating to a new month with no data shows 0 vs avg)
+        final currentKey = '${filter.year}-${filter.month}';
+        byMonth.putIfAbsent(currentKey, () => 0);
+ 
         final avg =
-            months.values.reduce((a, b) => a + b) / months.length;
-        final key = '${filter.year}-${filter.month}';
-        final current = months[key] ?? 0.0;
-        final diff = current - avg;
+            byMonth.values.reduce((a, b) => a + b) / byMonth.length;
+        final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
-          current: current,
+          current: currentPeriodTotal,
           diff: diff,
           isMore: diff > 0,
           periodName: 'month',
           hasData: true,
         );
       }
-
+ 
+    // ── Yearly ─────────────────────────────────────────────────────────────
     case DateFilter.yearly:
       {
-        final Map<int, double> years = {};
-        for (final t in expenses) {
-          years[t.date.year] = (years[t.date.year] ?? 0) + t.amount;
+        final Map<int, double> byYear = {};
+        for (final t in allExpenses) {
+          byYear[t.date.year] = (byYear[t.date.year] ?? 0) + t.amount;
         }
-        if (years.isEmpty) return null;
-        final avg = years.values.reduce((a, b) => a + b) / years.length;
-        final current = years[filter.year] ?? 0.0;
-        final diff = current - avg;
+        if (byYear.isEmpty) return null;
+ 
+        byYear.putIfAbsent(filter.year, () => 0);
+ 
+        final avg = byYear.values.reduce((a, b) => a + b) / byYear.length;
+        final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
-          current: current,
+          current: currentPeriodTotal,
           diff: diff,
           isMore: diff > 0,
           periodName: 'year',
           hasData: true,
         );
       }
-
+ 
     case DateFilter.overall:
     case DateFilter.range:
       return null;

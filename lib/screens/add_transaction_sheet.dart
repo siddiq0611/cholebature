@@ -25,6 +25,8 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   final _titleCtrl  = TextEditingController();
   final _amountCtrl = TextEditingController();
   final _noteCtrl   = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  final _noteFocus  = FocusNode();
 
   late TransactionType _type;
   late TransactionCategory _category;
@@ -41,6 +43,20 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   @override
   void initState() {
     super.initState();
+     _noteFocus.addListener(() {
+    if (_noteFocus.hasFocus) {
+      // Give the keyboard time to appear, then scroll to bottom
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (_scrollCtrl.hasClients) {
+          _scrollCtrl.animateTo(
+            _scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+     });
     if (_isEditing) {
       final tx = widget.existing!;
       _titleCtrl.text  = tx.title;
@@ -54,6 +70,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
       _type     = widget.defaultType ?? TransactionType.expense;
       _category = _defaultCategoryFor(_type);
     }
+    
   }
 
   @override
@@ -61,6 +78,8 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
     _titleCtrl.dispose();
     _amountCtrl.dispose();
     _noteCtrl.dispose();
+    _scrollCtrl.dispose();
+    _noteFocus.dispose();
     super.dispose();
   }
 
@@ -245,6 +264,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
 
           Flexible(
             child: SingleChildScrollView(
+              controller: _scrollCtrl,
               keyboardDismissBehavior:
                   ScrollViewKeyboardDismissBehavior.onDrag,
               padding:
@@ -354,6 +374,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
 
                   TextField(
                     controller: _noteCtrl,
+                    focusNode: _noteFocus, 
                     style: GoogleFonts.dmSans(
                         color: context.appTextPrimary, fontSize: 14),
                     maxLines: 1,

@@ -653,7 +653,7 @@ class AverageInsightResult {
   final bool isMore;
   final String periodName;
   final bool hasData;
-
+ 
   const AverageInsightResult({
     required this.average,
     required this.current,
@@ -662,27 +662,35 @@ class AverageInsightResult {
     required this.periodName,
     required this.hasData,
   });
-
-  double get pctDiff =>
-      average > 0 ? ((diff.abs() / average) * 100) : 0;
+ 
+  double get pctDiff => average > 0 ? ((diff.abs() / average) * 100) : 0;
 }
-
+ 
 final averageInsightProvider =
     FutureProvider<AverageInsightResult?>((ref) async {
   final filter = ref.watch(filterProvider);
-
+ 
   if (filter.filter == DateFilter.overall ||
       filter.filter == DateFilter.range) return null;
-
+ 
+  // ── All expenses from DB (unfiltered by date, used for history) ──────────
   final db = DatabaseService();
-  final allExpenses = (await db.getAllTransactions())
+  var allExpenses = (await db.getAllTransactions())
       .where((t) => t.type == TransactionType.expense)
       .toList();
-
+ 
+  // ── Apply the same CATEGORY filter as the main list ──────────────────────
+  // This is the key fix: if the user selected only "Food", the historical
+  // average should also only consider Food transactions.
+  if (filter.selectedCategories.isNotEmpty) {
+    allExpenses = allExpenses
+        .where((t) => filter.selectedCategories.contains(t.category))
+        .toList();
+  }
+ 
   if (allExpenses.isEmpty) return null;
-
-  // Current period total comes from the filtered provider so it stays
-  // in sync when navigating between periods or changing filters.
+ 
+  // ── Current-period total — read from the already-filtered provider ───────
   final filteredTxs = ref.watch(transactionListProvider).when(
         data: (list) => list,
         loading: () => <Transaction>[],
@@ -691,7 +699,9 @@ final averageInsightProvider =
   final currentPeriodTotal = filteredTxs
       .where((t) => t.type == TransactionType.expense)
       .fold<double>(0, (s, t) => s + t.amount);
-
+ 
+  // ── Build historical buckets and compare ─────────────────────────────────
+ 
   switch (filter.filter) {
     case DateFilter.daily:
       {
@@ -701,17 +711,14 @@ final averageInsightProvider =
           byDay[k] = (byDay[k] ?? 0) + t.amount;
         }
         if (byDay.isEmpty) return null;
-        // Exclude today's bucket from the average so we compare against
-        // completed days only — today is still in progress.
         final d = filter.specificDate ?? filter.day;
         final todayKey = '${d.year}-${d.month}-${d.day}';
-        final historicalValues = byDay.entries
+        final historical = byDay.entries
             .where((e) => e.key != todayKey)
             .map((e) => e.value)
             .toList();
-        if (historicalValues.isEmpty) return null;
-        final avg = historicalValues.reduce((a, b) => a + b) /
-            historicalValues.length;
+        if (historical.isEmpty) return null;
+        final avg = historical.reduce((a, b) => a + b) / historical.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -722,7 +729,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
-
+ 
     case DateFilter.weekly:
       {
         final Map<String, double> byWeek = {};
@@ -732,16 +739,14 @@ final averageInsightProvider =
           byWeek[k] = (byWeek[k] ?? 0) + t.amount;
         }
         if (byWeek.isEmpty) return null;
-        // Exclude current week from average (week may be incomplete).
         final ws = filter.weekStart;
         final thisWeekKey = '${ws.year}-${ws.month}-${ws.day}';
-        final historicalValues = byWeek.entries
+        final historical = byWeek.entries
             .where((e) => e.key != thisWeekKey)
             .map((e) => e.value)
             .toList();
-        if (historicalValues.isEmpty) return null;
-        final avg = historicalValues.reduce((a, b) => a + b) /
-            historicalValues.length;
+        if (historical.isEmpty) return null;
+        final avg = historical.reduce((a, b) => a + b) / historical.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -752,7 +757,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
-
+ 
     case DateFilter.monthly:
       {
         final Map<String, double> byMonth = {};
@@ -761,16 +766,13 @@ final averageInsightProvider =
           byMonth[k] = (byMonth[k] ?? 0) + t.amount;
         }
         if (byMonth.isEmpty) return null;
-        // Exclude the currently viewed month from the historical average.
         final currentKey = '${filter.year}-${filter.month}';
-        final historicalValues = byMonth.entries
+        final historical = byMonth.entries
             .where((e) => e.key != currentKey)
             .map((e) => e.value)
             .toList();
-        // If there's no history yet (first month of use), show no insight.
-        if (historicalValues.isEmpty) return null;
-        final avg = historicalValues.reduce((a, b) => a + b) /
-            historicalValues.length;
+        if (historical.isEmpty) return null;
+        final avg = historical.reduce((a, b) => a + b) / historical.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -781,7 +783,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
-
+ 
     case DateFilter.yearly:
       {
         final Map<int, double> byYear = {};
@@ -789,14 +791,12 @@ final averageInsightProvider =
           byYear[t.date.year] = (byYear[t.date.year] ?? 0) + t.amount;
         }
         if (byYear.isEmpty) return null;
-        // Exclude current year from average.
-        final historicalValues = byYear.entries
+        final historical = byYear.entries
             .where((e) => e.key != filter.year)
             .map((e) => e.value)
             .toList();
-        if (historicalValues.isEmpty) return null;
-        final avg = historicalValues.reduce((a, b) => a + b) /
-            historicalValues.length;
+        if (historical.isEmpty) return null;
+        final avg = historical.reduce((a, b) => a + b) / historical.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -807,7 +807,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
-
+ 
     case DateFilter.overall:
     case DateFilter.range:
       return null;

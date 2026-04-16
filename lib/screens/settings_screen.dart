@@ -1,5 +1,6 @@
 import 'package:chole_bature/models/custom_category_model.dart';
 import 'package:chole_bature/providers/custom_category_provider.dart';
+import 'package:chole_bature/services/database_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -175,7 +176,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: context.appTextSecondary,
                     title: 'Version',
-                    subtitle: '3.6.1',
+                    subtitle: '3.6.2',
                   ),
                   _Divider(),
                   _Tile(
@@ -213,16 +214,19 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _export(BuildContext context, WidgetRef ref) async {
-    final txs = ref.read(transactionListProvider).when<List<Transaction>>(
-        data: (v) => v, loading: () => [], error: (_, __) => []);
-    final fts = ref.read(futureTransactionProvider)
+    // Use DatabaseService directly so ALL transactions are included,
+    // regardless of the current date filter in transactionListProvider.
+    final db = DatabaseService();
+    final txs = await db.getAllTransactions();
+    final fts = ref
+        .read(futureTransactionProvider)
         .when<List<FutureTransaction>>(
             data: (v) => v, loading: () => [], error: (_, __) => []);
-    // NEW: read all custom categories (including soft-deleted)
-    final cats = ref.read(customCategoryProvider)
+    final cats = ref
+        .read(customCategoryProvider)
         .when<List<CustomCategory>>(
             data: (v) => v, loading: () => [], error: (_, __) => []);
-
+ 
     if (txs.isEmpty && fts.isEmpty && cats.isEmpty) {
       _snack(context, 'Nothing to export', color: context.appBorrowed);
       return;
@@ -231,7 +235,7 @@ class SettingsScreen extends ConsumerWidget {
     await ExportService.exportAll(
         transactions: txs,
         futureTransactions: fts,
-        customCategories: cats);   // NEW
+        customCategories: cats);
     if (context.mounted) {
       _snack(context, 'Saved to Downloads & share sheet opened',
           color: context.appIncome, dur: 4);

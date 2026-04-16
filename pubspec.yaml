@@ -1,7 +1,7 @@
 name: chole_bature
 description: A personal expense tracker app.
 publish_to: 'none'
-version: 3.6.0
+version: 3.6.1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

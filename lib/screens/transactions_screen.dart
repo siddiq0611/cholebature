@@ -66,37 +66,18 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
             backgroundColor: context.appBg,
             floating: true,
             snap: true,
-            title: _searchActive
-                ? TextField(
-                    controller: _searchCtrl,
-                    focusNode: _searchFocus,
-                    autofocus: true,
-                    style: GoogleFonts.dmSans(
-                        color: context.appTextPrimary, fontSize: 16),
-                    decoration: InputDecoration(
-                      hintText: 'Search by name or note…',
-                      hintStyle: GoogleFonts.dmSans(
-                          color: context.appTextMuted, fontSize: 15),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  )
-                : Text(
-                    'Transactions',
-                    style: GoogleFonts.dmSans(
-                      color: context.appTextPrimary,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.8,
-                    ),
-                  ),
+            // Title is always visible; search bar expands below it
+            title: Text(
+              'Transactions',
+              style: GoogleFonts.dmSans(
+                color: context.appTextPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8,
+              ),
+            ),
             actions: [
               if (_searchActive)
-                // Clear / close search
                 GestureDetector(
                   onTap: _closeSearch,
                   child: Container(
@@ -112,14 +93,13 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                         color: context.appTextSecondary, size: 18),
                   ),
                 )
-              else ...[
-                // Search icon
+              else
                 GestureDetector(
                   onTap: _openSearch,
                   child: Container(
                     width: 34,
                     height: 34,
-                    margin: const EdgeInsets.only(right: 8),
+                    margin: const EdgeInsets.only(right: 16),
                     decoration: BoxDecoration(
                       color: context.appSurfaceElevated,
                       borderRadius: BorderRadius.circular(10),
@@ -129,56 +109,158 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                         color: context.appTextSecondary, size: 18),
                   ),
                 ),
-                const Gap(8),
-              ],
             ],
           ),
 
-          // ── Search hint strip (when search is active) ──────────────────
-          if (_searchActive)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-              sliver: SliverToBoxAdapter(
-                child: AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  child: query.isEmpty
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          margin: const EdgeInsets.only(bottom: 6),
-                          decoration: BoxDecoration(
-                            color: context.appAccent.withValues(alpha: 0.07),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color:
-                                    context.appAccent.withValues(alpha: 0.2)),
+          // ── Search bar (shown below app bar when active) ────────────────
+          // Always rendered so AnimatedSize can collapse it smoothly.
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOut,
+                child: _searchActive
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Gap(4),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: context.appSurfaceElevated,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: context.appAccent.withValues(alpha: 0.5),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 12),
+                                  child: Icon(Icons.search_rounded,
+                                      color: context.appAccent, size: 18),
+                                ),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _searchCtrl,
+                                    focusNode: _searchFocus,
+                                    autofocus: true,
+                                    style: GoogleFonts.dmSans(
+                                        color: context.appTextPrimary,
+                                        fontSize: 14),
+                                    decoration: InputDecoration(
+                                      hintText:
+                                          'Search by title or note…',
+                                      hintStyle: GoogleFonts.dmSans(
+                                          color: context.appTextMuted,
+                                          fontSize: 14),
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      filled: false,
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 12),
+                                    ),
+                                  ),
+                                ),
+                                if (query.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () {
+                                      _searchCtrl.clear();
+                                      ref
+                                          .read(transactionSearchProvider
+                                              .notifier)
+                                          .state = '';
+                                    },
+                                    child: Padding(
+                                      padding:
+                                          const EdgeInsets.only(right: 10),
+                                      child: Icon(Icons.cancel_rounded,
+                                          color: context.appTextMuted,
+                                          size: 16),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                          child: Row(children: [
-                            Icon(Icons.info_outline_rounded,
-                                color: context.appAccent, size: 14),
-                            const Gap(8),
-                            Text('Type to search by title or note',
-                                style: GoogleFonts.dmSans(
-                                    color: context.appAccent, fontSize: 12)),
-                          ]),
-                        )
-                      : const SizedBox.shrink(),
-                ),
+                          const Gap(8),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
               ),
             ),
+          ),
 
-          // ── Filter bar (hidden during active search) ───────────────────
-          if (!_searchActive)
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-              sliver: SliverToBoxAdapter(child: FilterBar()),
+          // ── Filter bar (always visible) ────────────────────────────────
+          const SliverPadding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+            sliver: SliverToBoxAdapter(child: FilterBar()),
+          ),
+
+          // ── Summary bar (always visible, reflects searched subset) ─────
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            sliver: SliverToBoxAdapter(
+              child: txAsync.when(
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (allTxs) {
+                  // Apply search on top of the filtered list
+                  final txs = query.isEmpty
+                      ? allTxs
+                      : allTxs.where((t) {
+                          return t.title
+                                  .toLowerCase()
+                                  .contains(query) ||
+                              (t.note ?? '')
+                                  .toLowerCase()
+                                  .contains(query);
+                        }).toList();
+                  return _SummaryBar(transactions: txs);
+                },
+              ),
             ),
+          ),
 
-          // ── Summary bar ────────────────────────────────────────────────
-          if (!_searchActive)
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
-              sliver: SliverToBoxAdapter(child: _SummaryBar()),
+          // ── Search result count badge ──────────────────────────────────
+          if (_searchActive && query.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              sliver: SliverToBoxAdapter(
+                child: txAsync.maybeWhen(
+                  data: (allTxs) {
+                    final count = allTxs.where((t) {
+                      return t.title.toLowerCase().contains(query) ||
+                          (t.note ?? '').toLowerCase().contains(query);
+                    }).length;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: context.appAccent.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color:
+                                context.appAccent.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.filter_list_rounded,
+                            color: context.appAccent, size: 14),
+                        const Gap(8),
+                        Text(
+                          '$count result${count != 1 ? 's' : ''} for "$query"',
+                          style: GoogleFonts.dmSans(
+                              color: context.appAccent, fontSize: 12),
+                        ),
+                      ]),
+                    );
+                  },
+                  orElse: () => const SizedBox.shrink(),
+                ),
+              ),
             ),
 
           // ── Transaction list ───────────────────────────────────────────
@@ -198,15 +280,12 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
               ),
             ),
             data: (allTxs) {
-              // Apply search filter on top of existing provider results
+              // Apply search filter on top of date/category filtered results
               final txs = query.isEmpty
                   ? allTxs
                   : allTxs.where((t) {
-                      final titleMatch =
-                          t.title.toLowerCase().contains(query);
-                      final noteMatch =
+                      return t.title.toLowerCase().contains(query) ||
                           (t.note ?? '').toLowerCase().contains(query);
-                      return titleMatch || noteMatch;
                     }).toList();
 
               if (txs.isEmpty) {
@@ -217,7 +296,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                 );
               }
 
-              // Show flat list when searching (no date grouping)
+              // When searching: flat list (no date grouping) but still
+              // shows all the same chrome as the normal view.
               if (query.isNotEmpty) {
                 return SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -237,7 +317,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                 );
               }
 
-              // Normal grouped list
+              // Normal date-grouped list
               final grouped = <String, List<Transaction>>{};
               for (final t in txs) {
                 final key = formatDate(t.date);
@@ -319,56 +399,24 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   }
 }
 
-// ─── No search results ────────────────────────────────────────────────────────
+// ─── Summary bar ──────────────────────────────────────────────────────────────
+// Now accepts the already-filtered+searched transaction list directly instead
+// of watching the provider, so it always reflects exactly what's on screen.
 
-class _NoSearchResults extends StatelessWidget {
-  final String query;
-  const _NoSearchResults({required this.query});
+class _SummaryBar extends StatelessWidget {
+  final List<Transaction> transactions;
+  const _SummaryBar({required this.transactions});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.search_off_rounded,
-              size: 56, color: context.appTextMuted),
-          const Gap(16),
-          Text(
-            'No results for "$query"',
-            style: GoogleFonts.dmSans(
-              color: context.appTextSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const Gap(6),
-          Text(
-            'Try a different title or note',
-            style: GoogleFonts.dmSans(
-                color: context.appTextMuted, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-}
+    double income = 0, expense = 0;
+    for (final t in transactions) {
+      if (t.type == TransactionType.income) income += t.amount;
+      if (t.type == TransactionType.expense) expense += t.amount;
+    }
 
-// ─── Summary bar ──────────────────────────────────────────────────────────────
-
-class _SummaryBar extends ConsumerWidget {
-  const _SummaryBar();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final summary = ref.watch(summaryProvider);
-
-    final net = summary.income - summary.expense;
-    final hasData = summary.income != 0 ||
-        summary.expense != 0 ||
-        summary.borrowed != 0 ||
-        summary.lent != 0;
-
+    final net = income - expense;
+    final hasData = transactions.isNotEmpty;
     if (!hasData) return const SizedBox.shrink();
 
     final isPositive = net >= 0;
@@ -410,6 +458,41 @@ class _SummaryBar extends ConsumerWidget {
               fontWeight: FontWeight.w700,
               letterSpacing: -0.5,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── No search results ────────────────────────────────────────────────────────
+
+class _NoSearchResults extends StatelessWidget {
+  final String query;
+  const _NoSearchResults({required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off_rounded,
+              size: 56, color: context.appTextMuted),
+          const Gap(16),
+          Text(
+            'No results for "$query"',
+            style: GoogleFonts.dmSans(
+              color: context.appTextSecondary,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Gap(6),
+          Text(
+            'Try a different title or note',
+            style: GoogleFonts.dmSans(
+                color: context.appTextMuted, fontSize: 13),
           ),
         ],
       ),

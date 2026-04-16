@@ -670,23 +670,19 @@ class AverageInsightResult {
 final averageInsightProvider =
     FutureProvider<AverageInsightResult?>((ref) async {
   final filter = ref.watch(filterProvider);
- 
-  // No insight for "all time" or custom range views
+
   if (filter.filter == DateFilter.overall ||
       filter.filter == DateFilter.range) return null;
- 
-  // We still need ALL historical expenses to compute a meaningful average,
-  // but we get the CURRENT period's total from the already-filtered provider
-  // so the insight reacts when you navigate between periods.
+
   final db = DatabaseService();
   final allExpenses = (await db.getAllTransactions())
       .where((t) => t.type == TransactionType.expense)
       .toList();
- 
+
   if (allExpenses.isEmpty) return null;
- 
-  // The current period's total comes from the filtered list so it is
-  // always in sync with whatever period is shown on screen.
+
+  // Current period total comes from the filtered provider so it stays
+  // in sync when navigating between periods or changing filters.
   final filteredTxs = ref.watch(transactionListProvider).when(
         data: (list) => list,
         loading: () => <Transaction>[],
@@ -695,9 +691,8 @@ final averageInsightProvider =
   final currentPeriodTotal = filteredTxs
       .where((t) => t.type == TransactionType.expense)
       .fold<double>(0, (s, t) => s + t.amount);
- 
+
   switch (filter.filter) {
-    // ── Daily ──────────────────────────────────────────────────────────────
     case DateFilter.daily:
       {
         final Map<String, double> byDay = {};
@@ -706,8 +701,17 @@ final averageInsightProvider =
           byDay[k] = (byDay[k] ?? 0) + t.amount;
         }
         if (byDay.isEmpty) return null;
- 
-        final avg = byDay.values.reduce((a, b) => a + b) / byDay.length;
+        // Exclude today's bucket from the average so we compare against
+        // completed days only — today is still in progress.
+        final d = filter.specificDate ?? filter.day;
+        final todayKey = '${d.year}-${d.month}-${d.day}';
+        final historicalValues = byDay.entries
+            .where((e) => e.key != todayKey)
+            .map((e) => e.value)
+            .toList();
+        if (historicalValues.isEmpty) return null;
+        final avg = historicalValues.reduce((a, b) => a + b) /
+            historicalValues.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -718,8 +722,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
- 
-    // ── Weekly ─────────────────────────────────────────────────────────────
+
     case DateFilter.weekly:
       {
         final Map<String, double> byWeek = {};
@@ -729,8 +732,16 @@ final averageInsightProvider =
           byWeek[k] = (byWeek[k] ?? 0) + t.amount;
         }
         if (byWeek.isEmpty) return null;
- 
-        final avg = byWeek.values.reduce((a, b) => a + b) / byWeek.length;
+        // Exclude current week from average (week may be incomplete).
+        final ws = filter.weekStart;
+        final thisWeekKey = '${ws.year}-${ws.month}-${ws.day}';
+        final historicalValues = byWeek.entries
+            .where((e) => e.key != thisWeekKey)
+            .map((e) => e.value)
+            .toList();
+        if (historicalValues.isEmpty) return null;
+        final avg = historicalValues.reduce((a, b) => a + b) /
+            historicalValues.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -741,8 +752,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
- 
-    // ── Monthly ────────────────────────────────────────────────────────────
+
     case DateFilter.monthly:
       {
         final Map<String, double> byMonth = {};
@@ -751,14 +761,16 @@ final averageInsightProvider =
           byMonth[k] = (byMonth[k] ?? 0) + t.amount;
         }
         if (byMonth.isEmpty) return null;
- 
-        // Make sure the current month bucket exists even if empty
-        // (so navigating to a new month with no data shows 0 vs avg)
+        // Exclude the currently viewed month from the historical average.
         final currentKey = '${filter.year}-${filter.month}';
-        byMonth.putIfAbsent(currentKey, () => 0);
- 
-        final avg =
-            byMonth.values.reduce((a, b) => a + b) / byMonth.length;
+        final historicalValues = byMonth.entries
+            .where((e) => e.key != currentKey)
+            .map((e) => e.value)
+            .toList();
+        // If there's no history yet (first month of use), show no insight.
+        if (historicalValues.isEmpty) return null;
+        final avg = historicalValues.reduce((a, b) => a + b) /
+            historicalValues.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -769,8 +781,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
- 
-    // ── Yearly ─────────────────────────────────────────────────────────────
+
     case DateFilter.yearly:
       {
         final Map<int, double> byYear = {};
@@ -778,10 +789,14 @@ final averageInsightProvider =
           byYear[t.date.year] = (byYear[t.date.year] ?? 0) + t.amount;
         }
         if (byYear.isEmpty) return null;
- 
-        byYear.putIfAbsent(filter.year, () => 0);
- 
-        final avg = byYear.values.reduce((a, b) => a + b) / byYear.length;
+        // Exclude current year from average.
+        final historicalValues = byYear.entries
+            .where((e) => e.key != filter.year)
+            .map((e) => e.value)
+            .toList();
+        if (historicalValues.isEmpty) return null;
+        final avg = historicalValues.reduce((a, b) => a + b) /
+            historicalValues.length;
         final diff = currentPeriodTotal - avg;
         return AverageInsightResult(
           average: avg,
@@ -792,7 +807,7 @@ final averageInsightProvider =
           hasData: true,
         );
       }
- 
+
     case DateFilter.overall:
     case DateFilter.range:
       return null;

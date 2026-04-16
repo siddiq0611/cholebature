@@ -175,7 +175,7 @@ class SettingsScreen extends ConsumerWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: context.appTextSecondary,
                     title: 'Version',
-                    subtitle: '3.6.0',
+                    subtitle: '3.6.1',
                   ),
                   _Divider(),
                   _Tile(
